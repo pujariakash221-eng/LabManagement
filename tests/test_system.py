@@ -414,6 +414,9 @@ class LabManagementSystemTests(unittest.TestCase):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # Check required deployment files
+        self.assertTrue(os.path.exists(os.path.join(project_root, "install-agent.ps1")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.bat")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.md")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/setup_agent.ps1")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/start_agent.bat")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/linux/setup_agent.sh")))

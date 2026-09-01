@@ -123,29 +123,19 @@ Access the Web Dashboard in your browser:
 
 Deploy the client agent on each lab computer. The agent automatically creates a persistent hardware ID in `~/.lab_management/agent_id`.
 
-### A. Windows Workstations (PowerShell / Batch)
+### A. Windows Workstations (one-command private-repository installer)
 
-1. Copy the `LabManagement` project folder to the target Windows computer (e.g. `C:\LabManagement`).
-2. Open PowerShell as Administrator and run the automated setup script:
-   ```powershell
-   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-   cd C:\LabManagement
-   .\deploy\windows\setup_agent.ps1
-   ```
-3. The script will:
-   - Verify Python 3.12+ installation.
-   - Create `.venv` and install `requirements.txt`.
-   - Prompt for `LAB_SERVER_URL` (e.g. `http://192.168.1.100:8000`) and `LAB_AGENT_TOKEN`.
-   - Test connectivity to the central server.
-   - Create `agent.env`.
-4. **Manual Run**:
-   ```cmd
-   .\deploy\windows\start_agent.bat
-   ```
-5. **Automated Windows Startup**:
-   - Create a shortcut to `deploy\windows\start_agent.bat` and place it in the Windows Startup folder:
-     `shell:startup` (press `Win + R` and type `shell:startup`).
-   - Or register a Windows Scheduled Task to run on system boot.
+Open **PowerShell as Administrator**. Install Git for Windows first, then run this from any working directory:
+
+```powershell
+git clone https://github.com/pujariakash221-eng/LabManagement.git "$env:ProgramData\LabManagement"; & "$env:ProgramData\LabManagement\install-agent.ps1"
+```
+
+The repository is private, so authenticate through Git Credential Manager when it opens (or use a repository-scoped fine-grained token with **Contents: Read** when Git prompts). Do not use a raw GitHub download and never put a token in a command line or configuration file.
+
+The installer detects Git, reuses an existing checkout, securely prompts for the central server URL and enrollment secret, creates/reuses `.venv`, installs dependencies, writes a protected `agent.env`, registers the machine, configures/replaces the single `LabManagement Agent` Windows startup task, starts it, and verifies its server connection. New installations use `LAB_POWER_DRY_RUN=true`; a later run preserves the existing dry-run setting.
+
+For a one-click option after cloning, double-click `INSTALL_AGENT.bat`; it requests the required UAC elevation. Full details, including reruns and verification, are in [INSTALL_AGENT.md](INSTALL_AGENT.md).
 
 ---
 
