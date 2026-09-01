@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Computer Lab Management - macOS launchd Agent Configuration
+  
+  Installation instructions:
+  1. Copy project to /Users/Shared/LabManagement (or appropriate path)
+  2. Configure /Users/Shared/LabManagement/agent.env
+  3. Copy this plist to ~/Library/LaunchAgents/com.labmanagement.agent.plist
+     or /Library/LaunchDaemons/com.labmanagement.agent.plist
+  4. Load with:
+     launchctl load ~/Library/LaunchAgents/com.labmanagement.agent.plist
+     launchctl start com.labmanagement.agent
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.labmanagement.agent</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/Shared/LabManagement</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Shared/LabManagement/.venv/bin/python</string>
+        <string>-m</string>
+        <string>agent.main</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LAB_SERVER_URL</key>
+        <string>http://REPLACE_WITH_SERVER_IP:8000</string>
+        <key>LAB_AGENT_TOKEN</key>
+        <string>REPLACE_WITH_ENROLLMENT_SECRET</string>
+        <key>LAB_POWER_DRY_RUN</key>
+        <string>true</string>
+        <key>LAB_HEARTBEAT_INTERVAL</key>
+        <string>5.0</string>
+        <key>LAB_SCREEN_CAPTURE_INTERVAL</key>
+        <string>1.0</string>
+        <key>LAB_SCREEN_IMAGE_QUALITY</key>
+        <string>85</string>
+        <key>LAB_SCREEN_MAX_WIDTH</key>
+        <string>1920</string>
+        <key>LAB_SCREEN_MAX_HEIGHT</key>
+        <string>1080</string>
+        <key>LAB_SCREEN_MAX_FRAME_RATE</key>
+        <string>10</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/labmanagement-agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/labmanagement-agent.err</string>
+</dict>
+</plist>
+

@@ -1,0 +1,57 @@
+# ==============================================================================
+# Computer Lab Management - Linux systemd Service Unit Template
+# ==============================================================================
+# Instructions for installation on a Linux lab workstation:
+#
+# 1. Place project files in target directory, e.g. /opt/labmanagement
+# 2. Run setup script: ./deploy/linux/setup_agent.sh
+# 3. Edit this file with your actual user and path:
+#      User=labuser
+#      WorkingDirectory=/opt/labmanagement
+#      EnvironmentFile=/opt/labmanagement/agent.env
+#      ExecStart=/opt/labmanagement/.venv/bin/python -m agent.main
+# 4. Copy to systemd directory and enable:
+#      sudo cp deploy/linux/lab-agent.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable lab-agent.service
+#      sudo systemctl start lab-agent.service
+# 5. Check status:
+#      sudo systemctl status lab-agent.service
+#      journalctl -u lab-agent.service -f
+# ==============================================================================
+
+[Unit]
+Description=Computer Lab Management Client Agent
+Documentation=https://github.com/yourinstitution/LabManagement
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace 'labuser' with the local non-root lab workstation user account
+User=labuser
+# Replace with the absolute path to your lab management installation directory
+WorkingDirectory=/opt/labmanagement
+
+# Path to the agent environment configuration file
+EnvironmentFile=/opt/labmanagement/agent.env
+
+# Path to virtual environment python binary and module entrypoint
+ExecStart=/opt/labmanagement/.venv/bin/python -m agent.main
+
+# Resilience: Automatically restart if the process crashes or network reconnects
+Restart=always
+RestartSec=5
+
+# Logging: Stream logs to systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lab-agent
+
+# Security hardening: Prevent unintended privilege escalation
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

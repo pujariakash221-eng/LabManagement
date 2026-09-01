@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In · Computer Lab Management</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-body">
+  <main class="login-card-container">
+    <div class="login-card-header">
+      <div class="login-brand-icon" aria-hidden="true">CL</div>
+      <h1 class="login-title">Lab Management</h1>
+      <p class="login-subtitle">Administrator & Operator Console</p>
+    </div>
+
+    <form id="login-form" class="login-form-body" novalidate>
+      <div id="login-alert" class="login-alert" role="alert"></div>
+
+      <div class="form-group">
+        <label for="username" class="form-label">Username</label>
+        <input id="username" class="form-input" type="text" required autocomplete="username" autofocus placeholder="Enter your username">
+      </div>
+
+      <div class="form-group">
+        <label for="password" class="form-label">Password</label>
+        <input id="password" class="form-input" type="password" required autocomplete="current-password" placeholder="Enter your password">
+      </div>
+
+      <button id="login-submit-btn" class="btn btn-login-submit" type="submit">
+        <span id="login-spinner" class="spinner hidden" aria-hidden="true"></span>
+        <span id="login-btn-text">Sign in</span>
+      </button>
+    </form>
+  </main>
+
+  <script>
+    (function () {
+      const form = document.querySelector('#login-form');
+      const usernameInput = document.querySelector('#username');
+      const passwordInput = document.querySelector('#password');
+      const submitBtn = document.querySelector('#login-submit-btn');
+      const spinner = document.querySelector('#login-spinner');
+      const btnText = document.querySelector('#login-btn-text');
+      const alertBox = document.querySelector('#login-alert');
+
+      // Check if session was expired
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reason') === 'expired' || params.has('expired')) {
+        showAlert('Your session has expired. Please sign in again.', 'info');
+      }
+
+      function showAlert(message, type) {
+        alertBox.textContent = message;
+        alertBox.className = `login-alert ${type}`;
+      }
+
+      function hideAlert() {
+        alertBox.textContent = '';
+        alertBox.className = 'login-alert';
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+
+        if (!username || !password) {
+          showAlert('Please enter both username and password.', 'danger');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        spinner.classList.remove('hidden');
+        btnText.textContent = 'Signing in...';
+
+        try {
+          const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ username, password }),
+          });
+
+          if (response.ok) {
+            window.location.assign('/');
+          } else {
+            showAlert('Invalid username or password.', 'danger');
+            passwordInput.value = '';
+            passwordInput.focus();
+          }
+        } catch (err) {
+          showAlert('Unable to connect to the authentication server.', 'danger');
+        } finally {
+          submitBtn.disabled = false;
+          spinner.classList.add('hidden');
+          btnText.textContent = 'Sign in';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

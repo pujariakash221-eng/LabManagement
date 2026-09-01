@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Computer Lab Management</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="header-left">
+      <a href="#" class="brand-wrapper" aria-label="Lab Management Home">
+        <div class="brand-icon" aria-hidden="true">CL</div>
+        <div class="brand-titles">
+          <span class="brand-title">LabManagement</span>
+          <span class="brand-tag">Operations Console</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="header-right">
+      <!-- Live Server Connection Indicator -->
+      <div id="connection-badge" class="connection-badge" aria-live="polite" title="Server Connection Status">
+        <span id="connection-dot" class="status-dot"></span>
+        <span id="connection-label">Connecting...</span>
+      </div>
+
+      <!-- Authenticated User Profile Badge -->
+      <div id="user-profile-badge" class="user-profile-badge">
+        <div id="user-avatar" class="user-avatar" aria-hidden="true">U</div>
+        <div class="user-info">
+          <span id="user-name" class="user-name">User</span>
+          <span id="role-pill" class="role-pill viewer">VIEWER</span>
+        </div>
+      </div>
+
+      <!-- Sign Out -->
+      <button id="logout-button" class="btn-logout" type="button" title="Sign out of console">
+        <span aria-hidden="true">⎋</span>
+        <span>Sign out</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container (Sidebar + Content) -->
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="app-sidebar" aria-label="Sidebar Navigation">
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Navigation</div>
+        <a href="#dashboard" id="nav-dashboard" class="nav-link active">
+          <span class="nav-icon" aria-hidden="true">▦</span>
+          <span>Dashboard</span>
+        </a>
+        <a href="#computers" id="nav-computers" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">💻</span>
+          <span>Computers</span>
+        </a>
+        <a href="#discovery" id="nav-discovery" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">📡</span>
+          <span>Network Discovery</span>
+        </a>
+        <a href="#activity" id="nav-activity" class="nav-link hidden">
+          <span class="nav-icon" aria-hidden="true">📜</span>
+          <span>Activity Log</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div><strong>Lab Management</strong></div>
+        <div>FastAPI Core · Secure Local Ops</div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="app-main">
+      <!-- Overview Header -->
+      <div class="view-header">
+        <div>
+          <h2>Lab Overview</h2>
+          <p class="view-subtitle">Real-time status and control of registered computer workstations.</p>
+        </div>
+        <div>
+          <span id="updated-label" class="view-subtitle">Last updated: —</span>
+        </div>
+      </div>
+
+      <!-- Summary Metric Cards -->
+      <section id="metrics-summary" class="metrics-grid" aria-label="Lab Statistics Summary">
+        <article class="metric-card">
+          <div class="metric-icon-box metric-icon-total" aria-hidden="true">▦</div>
+          <div class="metric-info">
+            <span class="metric-label">Total Computers</span>
+            <strong id="total-count" class="metric-value">0</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-icon-box metric-icon-online" aria-hidden="true">🟢</div>
+          <div class="metric-info">
+            <span class="metric-label">Online</span>
+            <strong id="online-count" class="metric-value">0</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-icon-box metric-icon-offline" aria-hidden="true">🔴</div>
+          <div class="metric-info">
+            <span class="metric-label">Offline</span>
+            <strong id="offline-count" class="metric-value">0</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-icon-box metric-icon-discovery" aria-hidden="true">📡</div>
+          <div class="metric-info">
+            <span class="metric-label">Discovered Devices</span>
+            <strong id="discovery-count" class="metric-value">0</strong>
+          </div>
+        </article>
+      </section>
+
+      <!-- Managed Computers Section -->
+      <section id="computers-section" class="section-panel" aria-labelledby="computers-title">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <h3 id="computers-title" class="panel-title">Computer Inventory</h3>
+            <span id="table-meta" class="panel-subtitle">Loading registered computers...</span>
+          </div>
+
+          <div class="toolbar-actions">
+            <!-- Search Input -->
+            <div class="search-box">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="search-input" class="search-input" type="search" placeholder="Search hostname, IP, OS, agent ID..." autocomplete="off" aria-label="Search computers">
+            </div>
+
+            <!-- Status Filter Tabs -->
+            <div class="filter-tabs" role="tablist" aria-label="Filter computers by status">
+              <button type="button" class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
+              <button type="button" class="filter-tab" data-filter="online" role="tab" aria-selected="false">Online</button>
+              <button type="button" class="filter-tab" data-filter="offline" role="tab" aria-selected="false">Offline</button>
+            </div>
+
+            <!-- Manual Refresh Button -->
+            <button id="refresh-button" class="btn btn-secondary btn-sm" type="button" title="Refresh computers list">
+              <span id="refresh-icon" aria-hidden="true">↻</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div class="computers-layout">
+            <!-- Computer Table -->
+            <div class="table-container">
+              <table class="data-table" aria-label="Registered Computers Table">
+                <thead>
+                  <tr>
+                    <th scope="col" style="width: 110px;">Status</th>
+                    <th scope="col">Computer / Hostname</th>
+                    <th scope="col">IP Address</th>
+                    <th scope="col">Operating System</th>
+                    <th scope="col">Last Seen</th>
+                    <th scope="col" style="text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="agent-table-body">
+                  <tr>
+                    <td colspan="6" class="empty-state-box">
+                      <div class="empty-state-icon">⌛</div>
+                      <div class="empty-state-text">Loading registered computers...</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Selected Computer Details Panel -->
+            <aside id="details-panel" class="details-panel" aria-labelledby="details-panel-title">
+              <div class="details-header">
+                <h4 id="details-panel-title" class="panel-title">Workstation Details</h4>
+              </div>
+              <div id="details-content" class="details-body empty-details">
+                <div class="empty-details-icon">💻</div>
+                <p>Select a computer from the inventory table to view details and available actions.</p>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- Network Discovery Section -->
+      <section id="discovery-section" class="section-panel" aria-labelledby="discovery-title">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <h3 id="discovery-title" class="panel-title">Network Discovery (LAN)</h3>
+            <span id="discovery-meta" class="panel-subtitle">Discovered devices are unmanaged LAN endpoints and separate from registered computers.</span>
+          </div>
+
+          <div class="toolbar-actions">
+            <button id="scan-button" class="btn btn-primary btn-sm" type="button">
+              <span id="scan-icon" aria-hidden="true">⌁</span>
+              <span id="scan-btn-label">Scan Network</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div id="discovery-table-wrapper" class="discovery-table-wrapper">
+            <table class="data-table" aria-label="Discovered Devices Table">
+              <thead>
+                <tr>
+                  <th scope="col" style="width: 60px;">Type</th>
+                  <th scope="col">IP Address</th>
+                  <th scope="col">Resolved Hostname</th>
+                  <th scope="col" style="text-align: right;">Classification</th>
+                </tr>
+              </thead>
+              <tbody id="discovery-list">
+                <tr>
+                  <td colspan="4" class="empty-state-box">
+                    <div class="empty-state-icon">📡</div>
+                    <div class="empty-state-text">No active scan results.</div>
+                    <div class="empty-state-sub">Click "Scan Network" above to probe the local subnet for active IP addresses.</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Activity & Audit Log Section (ADMIN only) -->
+      <section id="activity-section" class="section-panel hidden" aria-labelledby="activity-title">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <h3 id="activity-title" class="panel-title">Activity & Audit Log</h3>
+            <span class="panel-subtitle">Security events, authentication, screen sessions, and power commands.</span>
+          </div>
+
+          <div class="toolbar-actions">
+            <button id="audit-refresh-button" class="btn btn-secondary btn-sm" type="button">
+              <span aria-hidden="true">↻</span> Refresh Log
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div class="activity-table-wrapper">
+            <table class="data-table" aria-label="Activity Log Table">
+              <thead>
+                <tr>
+                  <th scope="col" style="width: 180px;">Time</th>
+                  <th scope="col" style="width: 140px;">User</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Target</th>
+                  <th scope="col" style="text-align: right; width: 120px;">Result</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <tr>
+                  <td colspan="5" class="empty-state-box">
+                    <div class="empty-state-icon">📜</div>
+                    <div class="empty-state-text">Loading activity log...</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Screen Viewer Modal -->
+  <div id="screen-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="screen-modal-title">
+    <div class="screen-dialog">
+      <div class="modal-header-bar">
+        <div class="modal-header-info">
+          <h3 id="screen-modal-title" class="modal-title">Computer Screen</h3>
+          <span id="screen-modal-status" class="screen-live-badge">Connecting...</span>
+        </div>
+        <button id="screen-modal-close" class="modal-close-btn" type="button" aria-label="Close Screen Viewer">✕</button>
+      </div>
+
+      <div id="screen-modal-body" class="screen-viewport">
+        <img id="screen-image" class="screen-canvas-img" alt="Live workstation screen feed" style="display: none;">
+        <div id="screen-loading" class="screen-status-overlay">
+          <div class="spinner"></div>
+          <span id="screen-loading-text">Establishing live screen streaming connection...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Power Operation Confirmation Modal -->
+  <div id="power-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="power-modal-title">
+    <div class="confirm-dialog">
+      <div class="confirm-dialog-body">
+        <div id="power-modal-icon" class="confirm-header-icon danger" aria-hidden="true">⚠️</div>
+        <h3 id="power-modal-title" class="confirm-title">Confirm Power Action</h3>
+        <p id="power-modal-desc" class="confirm-message">Are you sure you want to proceed with this power command?</p>
+
+        <div class="confirm-target-box">
+          <div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Target Workstation</div>
+            <div id="power-modal-target-host" class="confirm-target-host">—</div>
+          </div>
+          <div id="power-modal-target-ip" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">—</div>
+        </div>
+
+        <p id="power-modal-warning" style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+          This action will immediately execute via the remote agent. Unsaved user work may be lost.
+        </p>
+      </div>
+
+      <div class="confirm-dialog-actions">
+        <button id="power-modal-cancel" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="power-modal-confirm" class="btn btn-danger" type="button">
+          <span id="power-confirm-spinner" class="spinner hidden"></span>
+          <span id="power-confirm-label">Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

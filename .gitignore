@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.Python
+.mypy_cache/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and configuration files
+.env
+.env.local
+agent.env
+agent.env.local
+
+# Database
+*.sqlite3
+*.sqlite
+*.db
+lab_management.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+/tmp/
+*.log
+*.temp
+.lab_management/
+
+# Node (if using any frontend build tools)
+node_modules/
+npm-debug.log
