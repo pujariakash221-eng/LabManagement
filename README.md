@@ -119,6 +119,23 @@ Access the Web Dashboard in your browser:
 
 ---
 
+## Windows Manager — One-Click Startup
+
+On a Windows manager/instructor PC, install Python 3.12+ (with **Add Python to PATH** selected) and clone the repository:
+
+```powershell
+git clone https://github.com/pujariakash221-eng/LabManagement.git
+cd LabManagement
+```
+
+Then double-click `START_MANAGER.bat` in Explorer, or run it from PowerShell/CMD. The launcher prepares `.venv`, installs missing or changed dependencies, creates a secure `.env` when needed, starts the existing FastAPI backend, verifies `/api/health`, opens the normal dashboard, and displays the manager's LAN dashboard address. It reuses a healthy existing LabManagement server rather than starting a duplicate.
+
+New `.env` files receive securely generated application, enrollment, and initial-admin secrets. They are never printed; retrieve the initial login password from the protected `.env` file. Use the displayed LAN URL as `LAB_SERVER_URL` when installing agents, and provide each agent the matching manager `LAB_AGENT_ENROLLMENT_SECRET` through the existing secure installer prompt.
+
+By default, the backend listens on `0.0.0.0:8000`, so both `http://127.0.0.1:8000/` on the manager and `http://<MANAGER-LAN-IP>:8000/` from the lab LAN work. To add an inbound Windows Firewall rule for the default private network port, run `deploy\windows\setup_manager_firewall.ps1` from an elevated PowerShell window. See [MANAGER_SETUP.md](MANAGER_SETUP.md) for first start, LAN access, troubleshooting, firewall, stopping, alternate-port, and security guidance.
+
+---
+
 ## 💻 Workstation Agent Installation
 
 Deploy the client agent on each lab computer. The agent automatically creates a persistent hardware ID in `~/.lab_management/agent_id`.

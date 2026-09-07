@@ -417,12 +417,32 @@ class LabManagementSystemTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(project_root, "install-agent.ps1")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.bat")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.md")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "START_MANAGER.bat")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "start-manager.ps1")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "MANAGER_SETUP.md")))
+        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/setup_manager_firewall.ps1")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/setup_agent.ps1")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/start_agent.bat")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/linux/setup_agent.sh")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/linux/lab-agent.service")))
         self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/macos/com.labmanagement.agent.plist")))
         self.assertTrue(os.path.exists(os.path.join(project_root, ".env.example")))
+
+        with open(os.path.join(project_root, ".gitignore"), encoding="utf-8") as gitignore_file:
+            self.assertIn(".env", gitignore_file.read().splitlines())
+
+        with open(os.path.join(project_root, "start-manager.ps1"), encoding="utf-8") as launcher_file:
+            launcher = launcher_file.read()
+        with open(os.path.join(project_root, "START_MANAGER.bat"), encoding="utf-8") as batch_file:
+            batch_launcher = batch_file.read()
+        self.assertIn("start-manager.ps1", batch_launcher)
+        self.assertIn("server.main", launcher)
+        self.assertIn("/api/health", launcher)
+        self.assertIn("Get-PortListeners", launcher)
+        self.assertIn("LAB_APP_SECRET", launcher)
+        self.assertIn("LAB_AGENT_ENROLLMENT_SECRET", launcher)
+        self.assertIn('modules = ("fastapi", "httpx", "PIL", "uvicorn", "websockets", "itsdangerous")', launcher)
+        self.assertIn('& $PythonPath "-"', launcher)
 
 
 if __name__ == "__main__":
