@@ -444,6 +444,33 @@ class LabManagementSystemTests(unittest.TestCase):
         self.assertIn('modules = ("fastapi", "httpx", "PIL", "uvicorn", "websockets", "itsdangerous")', launcher)
         self.assertIn('& $PythonPath "-"', launcher)
 
+    # --------------------------------------------------------------------------
+    # TEST 12: LINUX INSTALLER - VENV PYTHON & SPACE-SAFE PATH HANDLING
+    # --------------------------------------------------------------------------
+    def test_12_linux_installer_venv_python_and_path_handling(self):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        installer_path = os.path.join(project_root, "deploy", "linux", "setup_agent.sh")
+        with open(installer_path, encoding="utf-8") as f:
+            content = f.read()
+
+        # Must use the venv Python interpreter for pip (not the pip binary path).
+        self.assertIn('"${VENV_PYTHON}" -m pip', content)
+
+        # Must NOT invoke the pip binary directly as an executable.
+        self.assertNotIn('"${VENV_PIP}"', content)
+
+        # Must bootstrap pip via ensurepip if it is missing.
+        self.assertIn("ensurepip", content)
+
+        # Must verify the venv python executable exists before continuing.
+        self.assertIn('if [ ! -x "${VENV_PYTHON}" ]', content)
+
+        # Paths that may contain spaces must be double-quoted.
+        self.assertIn('"${VENV_DIR}"', content)
+        self.assertIn('"${VENV_PYTHON}"', content)
+        self.assertIn('"${ENV_FILE}"', content)
+        self.assertIn('"${REQUIREMENTS_FILE}"', content)
+
 
 if __name__ == "__main__":
     unittest.main()

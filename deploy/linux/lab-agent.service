@@ -7,9 +7,15 @@
 # 2. Run setup script: ./deploy/linux/setup_agent.sh
 # 3. Edit this file with your actual user and path:
 #      User=labuser
-#      WorkingDirectory=/opt/labmanagement
-#      EnvironmentFile=/opt/labmanagement/agent.env
-#      ExecStart=/opt/labmanagement/.venv/bin/python -m agent.main
+#      WorkingDirectory="/opt/labmanagement"
+#      EnvironmentFile="/opt/labmanagement/agent.env"
+#      ExecStart="/opt/labmanagement/.venv/bin/python" -m agent.main
+#    NOTE: If your install path contains spaces, KEEP the double quotes
+#    around every path value (systemd treats them as a single argument).
+#    Example with spaces:
+#      WorkingDirectory="/run/media/akash/New Volume/DC Project/LabManagement"
+#      EnvironmentFile="/run/media/akash/New Volume/DC Project/LabManagement/agent.env"
+#      ExecStart="/run/media/akash/New Volume/DC Project/LabManagement/.venv/bin/python" -m agent.main
 # 4. Copy to systemd directory and enable:
 #      sudo cp deploy/linux/lab-agent.service /etc/systemd/system/
 #      sudo systemctl daemon-reload
@@ -30,14 +36,18 @@ Wants=network-online.target
 Type=simple
 # Replace 'labuser' with the local non-root lab workstation user account
 User=labuser
-# Replace with the absolute path to your lab management installation directory
-WorkingDirectory=/opt/labmanagement
+# Replace with the absolute path to your lab management installation directory.
+# Quotes are required if the path contains spaces.
+WorkingDirectory="/opt/labmanagement"
 
-# Path to the agent environment configuration file
-EnvironmentFile=/opt/labmanagement/agent.env
+# Path to the agent environment configuration file.
+# Quotes are required if the path contains spaces.
+EnvironmentFile="/opt/labmanagement/agent.env"
 
-# Path to virtual environment python binary and module entrypoint
-ExecStart=/opt/labmanagement/.venv/bin/python -m agent.main
+# Path to virtual environment python binary and module entrypoint.
+# The python executable must be double-quoted when its path contains spaces so
+# systemd does not split the path on whitespace.
+ExecStart="/opt/labmanagement/.venv/bin/python" -m agent.main
 
 # Resilience: Automatically restart if the process crashes or network reconnects
 Restart=always
@@ -54,4 +64,3 @@ PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
-
