@@ -28,7 +28,7 @@ os.environ["LAB_BOOTSTRAP_VIEWER_USERNAME"] = "viewer1"
 os.environ["LAB_BOOTSTRAP_VIEWER_PASSWORD"] = "ViewerPassword2026!"
 os.environ["LAB_DATABASE_PATH"] = TEMP_DB_PATH
 os.environ["LAB_POWER_DRY_RUN"] = "true"
-os.environ["LAB_OFFLINE_TIMEOUT"] = "2.0"  # short timeout for testing offline detection
+os.environ["LAB_OFFLINE_TIMEOUT"] = "2.0"
 os.environ["LAB_AUDIT_MAX_ENTRIES"] = "100"
 
 from starlette.testclient import TestClient
@@ -55,387 +55,169 @@ class LabManagementSystemTests(unittest.TestCase):
         except OSError:
             pass
 
-    # --------------------------------------------------------------------------
-    # TEST 1: SERVER STARTUP & STATIC FILES
-    # --------------------------------------------------------------------------
     def test_01_server_startup_and_health(self):
-        # Health check
         res = self.client.get("/api/health")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json(), {"status": "running"})
-
-        # Static CSS
         css_res = self.client.get("/static/styles.css")
         self.assertEqual(css_res.status_code, 200)
         self.assertIn("--bg-sidebar", css_res.text)
-
-        # Static JS
         js_res = self.client.get("/static/app.js")
         self.assertEqual(js_res.status_code, 200)
         self.assertIn("loadAgents", js_res.text)
-
-        # Login page
         login_res = self.client.get("/login")
         self.assertEqual(login_res.status_code, 200)
         self.assertIn("Lab Management", login_res.text)
 
-    # --------------------------------------------------------------------------
-    # TEST 2: AUTHENTICATION
-    # --------------------------------------------------------------------------
     def test_02_authentication_flows(self):
         c = TestClient(app)
-
-        # 1. Unauthenticated root redirects to /login
         root_res = c.get("/", follow_redirects=False)
         self.assertEqual(root_res.status_code, 303)
         self.assertEqual(root_res.headers["location"], "/login")
-
-        # 2. Invalid login fails without leaking username existence
         bad_res = c.post("/api/auth/login", json={"username": "nonexistent_user", "password": "wrong"})
         self.assertEqual(bad_res.status_code, 401)
         self.assertEqual(bad_res.json()["detail"], "Invalid credentials")
-
         bad_pass = c.post("/api/auth/login", json={"username": "admin", "password": "wrongpassword"})
         self.assertEqual(bad_pass.status_code, 401)
         self.assertEqual(bad_pass.json()["detail"], "Invalid credentials")
-
-        # 3. Valid logins
         for role, creds in [("ADMIN", self.admin_creds), ("OPERATOR", self.operator_creds), ("VIEWER", self.viewer_creds)]:
             cli = TestClient(app)
             res = cli.post("/api/auth/login", json=creds)
             self.assertEqual(res.status_code, 200)
             self.assertEqual(res.json()["role"], role)
-
-            # Session info
             sess = cli.get("/api/auth/session")
             self.assertEqual(sess.status_code, 200)
             self.assertEqual(sess.json()["role"], role)
+            self.assertEqual(cli.post("/api/auth/logout").status_code, 200)
+            self.assertEqual(cli.get("/api/auth/session").status_code, 401)
 
-            # Logout
-            logout_res = cli.post("/api/auth/logout")
-            self.assertEqual(logout_res.status_code, 200)
-
-            # Post-logout protected request fails
-            after_logout = cli.get("/api/auth/session")
-            self.assertEqual(after_logout.status_code, 401)
-
-    # --------------------------------------------------------------------------
-    # TEST 3: ROLE AUTHORIZATION
-    # --------------------------------------------------------------------------
     def test_03_role_authorization_boundaries(self):
-        # Setup agent for power tests
         agent_id = str(uuid.uuid4())
-        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "AUTH-TEST-PC",
-            "ip_address": "192.168.1.50",
-            "operating_system": "Linux",
-        })
+        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "AUTH-TEST-PC", "ip_address": "192.168.1.50", "operating_system": "Linux"})
         self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret})
-
-        # VIEWER Client
         viewer_cli = TestClient(app)
         viewer_cli.post("/api/auth/login", json=self.viewer_creds)
-
         self.assertEqual(viewer_cli.get("/api/agents").status_code, 200)
         self.assertEqual(viewer_cli.get(f"/api/agents/{agent_id}").status_code, 200)
         self.assertEqual(viewer_cli.get("/api/discovery").status_code, 200)
-        # Denied endpoints
         self.assertEqual(viewer_cli.get("/api/audit").status_code, 403)
         self.assertEqual(viewer_cli.get("/api/admin/status").status_code, 403)
         self.assertEqual(viewer_cli.get("/api/admin/agents").status_code, 403)
         self.assertEqual(viewer_cli.post(f"/api/agents/{agent_id}/shutdown").status_code, 403)
         self.assertEqual(viewer_cli.post(f"/api/agents/{agent_id}/restart").status_code, 403)
-
-        # OPERATOR Client
         op_cli = TestClient(app)
         op_cli.post("/api/auth/login", json=self.operator_creds)
-
         self.assertEqual(op_cli.get("/api/agents").status_code, 200)
         self.assertEqual(op_cli.get("/api/discovery").status_code, 200)
-        # Operator can power control
         self.assertEqual(op_cli.post(f"/api/agents/{agent_id}/shutdown").status_code, 202)
-        # Denied admin endpoints
         self.assertEqual(op_cli.get("/api/audit").status_code, 403)
         self.assertEqual(op_cli.get("/api/admin/status").status_code, 403)
         self.assertEqual(op_cli.get("/api/admin/agents").status_code, 403)
-
-        # ADMIN Client
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-
         self.assertEqual(admin_cli.get("/api/audit").status_code, 200)
         self.assertEqual(admin_cli.get("/api/admin/status").status_code, 200)
         self.assertEqual(admin_cli.get("/api/admin/agents").status_code, 200)
 
-    # --------------------------------------------------------------------------
-    # TEST 4: AGENT REGISTRATION
-    # --------------------------------------------------------------------------
     def test_04_agent_registration_validation(self):
         agent_id = str(uuid.uuid4())
-
-        # 1. Invalid / Missing token
-        res_no_tok = self.client.post("/api/agents/register", json={
-            "agent_id": agent_id,
-            "hostname": "REG-TEST",
-            "ip_address": "192.168.1.51",
-            "operating_system": "Windows 11",
-        })
-        self.assertEqual(res_no_tok.status_code, 401)
-
-        res_bad_tok = self.client.post("/api/agents/register", headers={"X-Agent-Token": "bad-token"}, json={
-            "agent_id": agent_id,
-            "hostname": "REG-TEST",
-            "ip_address": "192.168.1.51",
-            "operating_system": "Windows 11",
-        })
-        self.assertEqual(res_bad_tok.status_code, 401)
-
-        # 2. Malformed Agent ID
-        res_mal_id = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": "not-a-valid-uuid",
-            "hostname": "REG-TEST",
-            "ip_address": "192.168.1.51",
-            "operating_system": "Windows 11",
-        })
-        self.assertEqual(res_mal_id.status_code, 422)
-
-        # 3. Valid Registration
-        res_ok = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "REG-TEST-ORIGINAL",
-            "ip_address": "192.168.1.51",
-            "operating_system": "Windows 11",
-        })
+        self.assertEqual(self.client.post("/api/agents/register", json={"agent_id": agent_id, "hostname": "REG-TEST", "ip_address": "192.168.1.51", "operating_system": "Windows 11"}).status_code, 401)
+        self.assertEqual(self.client.post("/api/agents/register", headers={"X-Agent-Token": "bad-token"}, json={"agent_id": agent_id, "hostname": "REG-TEST", "ip_address": "192.168.1.51", "operating_system": "Windows 11"}).status_code, 401)
+        self.assertEqual(self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": "not-a-valid-uuid", "hostname": "REG-TEST", "ip_address": "192.168.1.51", "operating_system": "Windows 11"}).status_code, 422)
+        res_ok = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "REG-TEST-ORIGINAL", "ip_address": "192.168.1.51", "operating_system": "Windows 11"})
         self.assertEqual(res_ok.status_code, 200)
         self.assertEqual(res_ok.json()["hostname"], "REG-TEST-ORIGINAL")
-
-        # 4. Duplicate registration updates existing entry
-        res_dup = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "REG-TEST-RENAMED",
-            "ip_address": "192.168.1.52",
-            "operating_system": "Windows 11 Pro",
-        })
+        res_dup = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "REG-TEST-RENAMED", "ip_address": "192.168.1.52", "operating_system": "Windows 11 Pro"})
         self.assertEqual(res_dup.status_code, 200)
         self.assertEqual(res_dup.json()["hostname"], "REG-TEST-RENAMED")
-
-        # 5. Disabled agent registration rejection
         with app.state.database.connect() as db:
             db.execute("UPDATE agents SET enabled = 0 WHERE agent_id = ?", (agent_id,))
-        res_disabled = self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "REG-TEST-DISABLED",
-            "ip_address": "192.168.1.52",
-            "operating_system": "Windows 11 Pro",
-        })
-        self.assertEqual(res_disabled.status_code, 403)
+        self.assertEqual(self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "REG-TEST-DISABLED", "ip_address": "192.168.1.52", "operating_system": "Windows 11 Pro"}).status_code, 403)
 
-    # --------------------------------------------------------------------------
-    # TEST 5: HEARTBEAT & TIMEOUT
-    # --------------------------------------------------------------------------
     def test_05_heartbeat_and_offline_detection(self):
         agent_id = str(uuid.uuid4())
-        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "HB-TEST-PC",
-            "ip_address": "192.168.1.60",
-            "operating_system": "Ubuntu",
-        })
-
-        # 1. Heartbeat succeeds
-        hb_res = self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret})
-        self.assertEqual(hb_res.status_code, 200)
-        self.assertEqual(hb_res.json()["status"], "ONLINE")
-
-        # 2. Login to view agent
+        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "HB-TEST-PC", "ip_address": "192.168.1.60", "operating_system": "Ubuntu"})
+        self.assertEqual(self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret}).status_code, 200)
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-        agent_data = admin_cli.get(f"/api/agents/{agent_id}").json()
-        self.assertEqual(agent_data["status"], "ONLINE")
-
-        # 3. Simulate stale heartbeat > timeout (timeout is 2.0s in test env)
+        self.assertEqual(admin_cli.get(f"/api/agents/{agent_id}").json()["status"], "ONLINE")
         time.sleep(2.1)
-        stale_agent = admin_cli.get(f"/api/agents/{agent_id}").json()
-        self.assertEqual(stale_agent["status"], "OFFLINE")
+        self.assertEqual(admin_cli.get(f"/api/agents/{agent_id}").json()["status"], "OFFLINE")
+        self.assertEqual(self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret}).status_code, 200)
 
-        # 4. Reconnection heartbeat
-        reconn = self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret})
-        self.assertEqual(reconn.status_code, 200)
-        self.assertEqual(reconn.json()["status"], "ONLINE")
-
-    # --------------------------------------------------------------------------
-    # TEST 6: NETWORK DISCOVERY
-    # --------------------------------------------------------------------------
     def test_06_network_discovery(self):
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-
         scan_res = admin_cli.post("/api/discovery/scan")
         self.assertEqual(scan_res.status_code, 200)
         results = scan_res.json()
         self.assertIsInstance(results, list)
+        self.assertEqual(len(admin_cli.get("/api/discovery").json()), len(results))
 
-        # Cached discovery
-        cached = admin_cli.get("/api/discovery").json()
-        self.assertEqual(len(cached), len(results))
-
-    # --------------------------------------------------------------------------
-    # TEST 7: SCREEN STREAMING WEBSOCKETS
-    # --------------------------------------------------------------------------
     def test_07_screen_stream_websocket(self):
         agent_id = str(uuid.uuid4())
-        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "STREAM-PC",
-            "ip_address": "192.168.1.70",
-            "operating_system": "Linux",
-        })
+        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "STREAM-PC", "ip_address": "192.168.1.70", "operating_system": "Linux"})
         self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret})
-
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-
-        # 1. Unauthenticated viewer rejected
         unauth_cli = TestClient(app)
         with unauth_cli.websocket_connect(f"/ws/agents/{agent_id}/screen") as ws:
             ws.send_json({"role": "viewer"})
-            # Server closes with 4401
-
-        # 2. Source & Viewer communication
         with self.client.websocket_connect(f"/ws/agents/{agent_id}/screen", headers={"X-Agent-Token": self.agent_secret}) as src_ws:
             src_ws.send_json({"role": "source"})
-
-            # Authenticated viewer connects
             with admin_cli.websocket_connect(f"/ws/agents/{agent_id}/screen") as view_ws:
                 view_ws.send_json({"role": "viewer"})
-
-                # Relayed frame
                 test_frame = base64.b64encode(b"TEST_SCREEN_FRAME").decode("utf-8")
                 src_ws.send_json({"type": "frame", "data": test_frame})
-
                 msg = view_ws.receive_json()
                 self.assertEqual(msg["type"], "frame")
                 self.assertEqual(msg["data"], test_frame)
-
-                # Ping/Pong
                 view_ws.send_json({"type": "ping"})
-                pong = view_ws.receive_json()
-                self.assertEqual(pong["type"], "pong")
+                self.assertEqual(view_ws.receive_json()["type"], "pong")
 
-    # --------------------------------------------------------------------------
-    # TEST 8: POWER CONTROL & DRY-RUN
-    # --------------------------------------------------------------------------
     def test_08_power_control_pipeline(self):
         agent_id = str(uuid.uuid4())
-        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "POWER-PC",
-            "ip_address": "192.168.1.80",
-            "operating_system": "Linux",
-        })
+        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "POWER-PC", "ip_address": "192.168.1.80", "operating_system": "Linux"})
         self.client.post(f"/api/agents/{agent_id}/heartbeat", headers={"X-Agent-Token": self.agent_secret})
-
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-
-        # 1. Queue command
-        q_res = admin_cli.post(f"/api/agents/{agent_id}/shutdown")
-        self.assertEqual(q_res.status_code, 202)
-        self.assertEqual(q_res.json()["status"], "queued")
-
-        # 2. Attempt duplicate queue while pending returns 409
-        dup_res = admin_cli.post(f"/api/agents/{agent_id}/shutdown")
-        self.assertEqual(dup_res.status_code, 409)
-
-        # 3. Agent fetches command
-        fetch_res = self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret})
-        self.assertEqual(fetch_res.status_code, 200)
-        cmd = fetch_res.json()["command"]
+        self.assertEqual(admin_cli.post(f"/api/agents/{agent_id}/shutdown").status_code, 202)
+        self.assertEqual(admin_cli.post(f"/api/agents/{agent_id}/shutdown").status_code, 409)
+        cmd = self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret}).json()["command"]
         self.assertEqual(cmd["action"], "shutdown")
-
-        # 4. Dry run execution
         res = execute_power_action(cmd["action"], dry_run=True)
         self.assertEqual(res, "dry_run")
+        self.assertEqual(self.client.post(f"/api/agents/{agent_id}/power-command/ack", headers={"X-Agent-Token": self.agent_secret}, json={"command_id": cmd["id"], "result": res}).status_code, 200)
+        self.assertIsNone(self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret}).json()["command"])
 
-        # 5. Acknowledge command
-        ack_res = self.client.post(f"/api/agents/{agent_id}/power-command/ack", headers={"X-Agent-Token": self.agent_secret}, json={
-            "command_id": cmd["id"],
-            "result": res
-        })
-        self.assertEqual(ack_res.status_code, 200)
-
-        # 6. Subsequent check returns None (no pending command)
-        empty_cmd = self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret}).json()
-        self.assertIsNone(empty_cmd["command"])
-
-    # --------------------------------------------------------------------------
-    # TEST 9: DATABASE PERSISTENCE ACROSS RESTART
-    # --------------------------------------------------------------------------
     def test_09_database_persistence(self):
         agent_id = str(uuid.uuid4())
-        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={
-            "agent_id": agent_id,
-            "hostname": "PERSIST-PC",
-            "ip_address": "192.168.1.90",
-            "operating_system": "Linux",
-        })
-
-        # New database connection to same SQLite file
+        self.client.post("/api/agents/register", headers={"X-Agent-Token": self.agent_secret}, json={"agent_id": agent_id, "hostname": "PERSIST-PC", "ip_address": "192.168.1.90", "operating_system": "Linux"})
         reopened_db = Database(TEMP_DB_PATH)
-        agent = reopened_db.get_agent(agent_id)
-        self.assertIsNotNone(agent)
-        self.assertEqual(agent["hostname"], "PERSIST-PC")
+        self.assertEqual(reopened_db.get_agent(agent_id)["hostname"], "PERSIST-PC")
+        self.assertEqual(reopened_db.get_user("admin")["role"], "ADMIN")
 
-        user = reopened_db.get_user("admin")
-        self.assertIsNotNone(user)
-        self.assertEqual(user["role"], "ADMIN")
-
-    # --------------------------------------------------------------------------
-    # TEST 10: AUDIT LOGGING & ZERO SECRET EXPOSURE
-    # --------------------------------------------------------------------------
     def test_10_audit_logging_and_secret_redaction(self):
         admin_cli = TestClient(app)
         admin_cli.post("/api/auth/login", json=self.admin_creds)
-
-        logs = admin_cli.get("/api/audit").json()
-        self.assertGreater(len(logs), 0)
-
-        # Ensure no secrets in logs
-        raw_logs = json.dumps(logs)
+        raw_logs = json.dumps(admin_cli.get("/api/audit").json())
+        self.assertGreater(len(raw_logs), 0)
         self.assertNotIn("AdminPassword2026!", raw_logs)
         self.assertNotIn(self.agent_secret, raw_logs)
         self.assertNotIn(SERVER_CONFIG.app_secret, raw_logs)
 
-    # --------------------------------------------------------------------------
-    # TEST 11: DEPLOYMENT CONFIGURATION INTEGRITY
-    # --------------------------------------------------------------------------
     def test_11_deployment_files_exist_and_clean(self):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-        # Check required deployment files
-        self.assertTrue(os.path.exists(os.path.join(project_root, "install-agent.ps1")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.bat")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "INSTALL_AGENT.md")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "START_MANAGER.bat")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "start-manager.ps1")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "MANAGER_SETUP.md")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/setup_manager_firewall.ps1")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/setup_agent.ps1")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/windows/start_agent.bat")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/linux/setup_agent.sh")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/linux/lab-agent.service")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, "deploy/macos/com.labmanagement.agent.plist")))
-        self.assertTrue(os.path.exists(os.path.join(project_root, ".env.example")))
-
+        required = ["install-agent.ps1", "INSTALL_AGENT.bat", "INSTALL_AGENT.md", "START_MANAGER.bat", "start-manager.ps1", "MANAGER_SETUP.md", "deploy/windows/setup_manager_firewall.ps1", "deploy/windows/setup_agent.ps1", "deploy/windows/start_agent.bat", "deploy/linux/setup_agent.sh", "deploy/linux/lab-agent.service", "deploy/macos/com.labmanagement.agent.plist", ".env.example"]
+        for relative_path in required:
+            self.assertTrue(os.path.exists(os.path.join(project_root, relative_path)), relative_path)
         with open(os.path.join(project_root, ".gitignore"), encoding="utf-8") as gitignore_file:
             self.assertIn(".env", gitignore_file.read().splitlines())
-
         with open(os.path.join(project_root, "start-manager.ps1"), encoding="utf-8") as launcher_file:
             launcher = launcher_file.read()
-        with open(os.path.join(project_root, "START_MANAGER.bat"), encoding="utf-8") as batch_file:
-            batch_launcher = batch_file.read()
-        self.assertIn("start-manager.ps1", batch_launcher)
+        with open(os.path.join(project_root, "START_MANAGER.bat"), encoding="utf-8") as batch_launcher:
+            batch_launcher_text = batch_launcher.read()
+        self.assertIn("start-manager.ps1", batch_launcher_text)
         self.assertIn("server.main", launcher)
         self.assertIn("/api/health", launcher)
         self.assertIn("Get-PortListeners", launcher)
@@ -444,32 +226,56 @@ class LabManagementSystemTests(unittest.TestCase):
         self.assertIn('modules = ("fastapi", "httpx", "PIL", "uvicorn", "websockets", "itsdangerous")', launcher)
         self.assertIn('& $PythonPath "-"', launcher)
 
-    # --------------------------------------------------------------------------
-    # TEST 12: LINUX INSTALLER - VENV PYTHON & SPACE-SAFE PATH HANDLING
-    # --------------------------------------------------------------------------
     def test_12_linux_installer_venv_python_and_path_handling(self):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         installer_path = os.path.join(project_root, "deploy", "linux", "setup_agent.sh")
         with open(installer_path, encoding="utf-8") as f:
             content = f.read()
-
-        # Must use the venv Python interpreter for pip (not the pip binary path).
         self.assertIn('"${VENV_PYTHON}" -m pip', content)
-
-        # Must NOT invoke the pip binary directly as an executable.
         self.assertNotIn('"${VENV_PIP}"', content)
-
-        # Must bootstrap pip via ensurepip if it is missing.
         self.assertIn("ensurepip", content)
-
-        # Must verify the venv python executable exists before continuing.
         self.assertIn('if [ ! -x "${VENV_PYTHON}" ]', content)
-
-        # Paths that may contain spaces must be double-quoted.
         self.assertIn('"${VENV_DIR}"', content)
         self.assertIn('"${VENV_PYTHON}"', content)
         self.assertIn('"${ENV_FILE}"', content)
         self.assertIn('"${REQUIREMENTS_FILE}"', content)
+
+    def test_13_windows_installer_bootstrap_path_regression(self):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        bootstrap_path = os.path.join(project_root, "install-agent.ps1")
+        setup_path = os.path.join(project_root, "deploy", "windows", "setup_agent.ps1")
+        with open(bootstrap_path, encoding="utf-8") as f:
+            bootstrap = f.read()
+        with open(setup_path, encoding="utf-8") as f:
+            setup = f.read()
+
+        # Bootstrap must explicitly own and pass the installation root.
+        self.assertIn("ProjectRoot = $projectRoot", bootstrap)
+        self.assertIn("[ScriptBlock]::Create", bootstrap)
+        self.assertNotIn("Set-ExecutionPolicy", bootstrap)
+        self.assertIn("-LiteralPath", bootstrap)
+        self.assertIn("$projectRoot", bootstrap)
+
+        # Setup must accept an explicit root and only fall back to script path
+        # discovery when it is actually available.
+        self.assertIn("[string]$ProjectRoot", setup)
+        self.assertIn("Resolve-ProjectRoot", setup)
+        self.assertIn("[string]::IsNullOrWhiteSpace($PSCommandPath)", setup)
+        self.assertIn("$MyInvocation.MyCommand.Path", setup)
+        self.assertIn("ProjectRoot could not be determined.", setup)
+        self.assertIn('Set-Location -LiteralPath $ProjectRoot', setup)
+        self.assertIn('Join-Path $ProjectRoot "deploy\\windows\\setup_agent.ps1"', setup)
+
+        # Paths must be literal/validated and spaces must remain supported.
+        self.assertIn("Test-Path -LiteralPath", setup)
+        self.assertIn("Resolve-Path -LiteralPath", setup)
+        self.assertIn('Join-Path $ProjectRoot ".venv"', setup)
+        self.assertIn('Join-Path $ProjectRoot "agent.env"', setup)
+        self.assertNotIn("Split-Path -Parent $PSCommandPath", setup)
+
+        # Secret must not be emitted in registration output.
+        self.assertIn('Write-Host "      Server connection verified and machine registered."', setup)
+        self.assertNotIn('Write-Host "      Server connection verified and machine registered: $registrationOutput"', setup)
 
 
 if __name__ == "__main__":
