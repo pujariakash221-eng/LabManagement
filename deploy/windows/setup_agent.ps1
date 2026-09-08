@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ServerUrl,
-    [SecureString]$EnrollmentSecret
+    [SecureString]$EnrollmentSecret,
+    [string]$ProjectRoot
 )
 
 # ==============================================================================
@@ -12,6 +13,8 @@ param(
 #
 # Run PowerShell as Administrator, then:
 #   .\deploy\windows\setup_agent.ps1
+# Or provide an explicit root:
+#   .\deploy\windows\setup_agent.ps1 -ProjectRoot C:\ProgramData\LabManagement
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +23,50 @@ function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Resolve-ProjectRoot {
+    param([string]$ExplicitProjectRoot)
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitProjectRoot)) {
+        $candidate = [Environment]::ExpandEnvironmentVariables($ExplicitProjectRoot.Trim())
+        try { $candidate = [System.IO.Path]::GetFullPath($candidate) } catch { throw "ProjectRoot is invalid: '$ExplicitProjectRoot'. Details: $($_.Exception.Message)" }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+            throw "ProjectRoot does not exist or is not a directory: '$candidate'."
+        }
+        $setupFile = Join-Path $candidate "deploy\windows\setup_agent.ps1"
+        $requirementsFile = Join-Path $candidate "requirements.txt"
+        if (-not (Test-Path -LiteralPath $setupFile -PathType Leaf) -or -not (Test-Path -LiteralPath $requirementsFile -PathType Leaf)) {
+            throw "ProjectRoot is not a valid LabManagement installation: '$candidate'."
+        }
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+
+    $scriptPath = $null
+    if (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+        $scriptPath = $PSCommandPath
+    } elseif ($MyInvocation -and -not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+        $scriptPath = $MyInvocation.MyCommand.Path
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($scriptPath)) {
+        try {
+            $resolvedScript = (Resolve-Path -LiteralPath $scriptPath -ErrorAction Stop).Path
+            $scriptDirectory = Split-Path -Parent $resolvedScript
+            if (-not [string]::IsNullOrWhiteSpace($scriptDirectory)) {
+                $candidate = (Resolve-Path -LiteralPath (Join-Path $scriptDirectory "..\..") -ErrorAction Stop).Path
+                $setupFile = Join-Path $candidate "deploy\windows\setup_agent.ps1"
+                $requirementsFile = Join-Path $candidate "requirements.txt"
+                if ((Test-Path -LiteralPath $setupFile -PathType Leaf) -and (Test-Path -LiteralPath $requirementsFile -PathType Leaf)) {
+                    return $candidate
+                }
+            }
+        } catch {
+            # Fall through to the explicit, actionable error below.
+        }
+    }
+
+    throw "ProjectRoot could not be determined. Run setup_agent.ps1 from a LabManagement checkout or provide -ProjectRoot."
 }
 
 function Get-EnvFileValue {
@@ -83,9 +130,8 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  Computer Lab Management - Windows Agent Setup" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. Always resolve relative to this script, never the caller's directory.
-$scriptDirectory = Split-Path -Parent $PSCommandPath
-$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDirectory "..\..")).Path
+# 1. Resolve the installation root without ever requiring a non-empty script path.
+$ProjectRoot = Resolve-ProjectRoot -ExplicitProjectRoot $ProjectRoot
 Set-Location -LiteralPath $ProjectRoot
 Write-Host "[1/8] Installation directory: $ProjectRoot" -ForegroundColor Green
 
@@ -93,17 +139,11 @@ Write-Host "[1/8] Installation directory: $ProjectRoot" -ForegroundColor Green
 Write-Host "[2/8] Checking for Python 3.12+..." -ForegroundColor Yellow
 $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
 $pythonArguments = @()
-if (-not $pythonCommand) {
-    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-}
+if (-not $pythonCommand) { $pythonCommand = Get-Command python -ErrorAction SilentlyContinue }
 if (-not $pythonCommand) {
     $pythonCommand = Get-Command py.exe -ErrorAction SilentlyContinue
-    if (-not $pythonCommand) {
-        $pythonCommand = Get-Command py -ErrorAction SilentlyContinue
-    }
-    if ($pythonCommand) {
-        $pythonArguments = @("-3")
-    }
+    if (-not $pythonCommand) { $pythonCommand = Get-Command py -ErrorAction SilentlyContinue }
+    if ($pythonCommand) { $pythonArguments = @("-3") }
 }
 if (-not $pythonCommand) {
     throw "Python 3.12 or newer was not found. Install it from https://www.python.org/downloads/windows/ and select 'Add Python to PATH', then run this installer again."
@@ -112,13 +152,9 @@ if (-not $pythonCommand) {
 $pythonExecutable = $pythonCommand.Source
 $pythonVersionOutput = & $pythonExecutable @pythonArguments "--version" 2>&1
 Assert-NativeCommandSucceeded "Python version check"
-if ($pythonVersionOutput -notmatch "Python\s+(\d+)\.(\d+)") {
-    throw "Could not determine the Python version from: $pythonVersionOutput"
-}
+if ($pythonVersionOutput -notmatch "Python\s+(\d+)\.(\d+)") { throw "Could not determine the Python version from: $pythonVersionOutput" }
 $pythonVersion = [Version]::new([int]$matches[1], [int]$matches[2])
-if ($pythonVersion -lt [Version]::new(3, 12)) {
-    throw "Python $pythonVersion was found, but LabManagement requires Python 3.12 or newer."
-}
+if ($pythonVersion -lt [Version]::new(3, 12)) { throw "Python $pythonVersion was found, but LabManagement requires Python 3.12 or newer." }
 Write-Host "      Detected: $pythonVersionOutput" -ForegroundColor Green
 
 # 3. Create or reuse the virtual environment.
@@ -126,9 +162,7 @@ $VenvDir = Join-Path $ProjectRoot ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 Write-Host "[3/8] Preparing virtual environment: $VenvDir" -ForegroundColor Yellow
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
-    if (Test-Path -LiteralPath $VenvDir) {
-        throw "The existing virtual environment is incomplete ($VenvPython is missing). Remove only '$VenvDir' and rerun the installer."
-    }
+    if (Test-Path -LiteralPath $VenvDir) { throw "The existing virtual environment is incomplete ($VenvPython is missing). Remove only '$VenvDir' and rerun the installer." }
     & $pythonExecutable @pythonArguments "-m" "venv" $VenvDir
     Assert-NativeCommandSucceeded "Virtual environment creation"
 }
@@ -138,7 +172,9 @@ Write-Host "      Virtual environment ready." -ForegroundColor Green
 Write-Host "[4/8] Installing required Python dependencies..." -ForegroundColor Yellow
 & $VenvPython "-m" "pip" "install" "--upgrade" "pip" "--quiet"
 Assert-NativeCommandSucceeded "pip upgrade"
-& $VenvPython "-m" "pip" "install" "-r" (Join-Path $ProjectRoot "requirements.txt") "--quiet"
+$requirementsPath = Join-Path $ProjectRoot "requirements.txt"
+if (-not (Test-Path -LiteralPath $requirementsPath -PathType Leaf)) { throw "Required dependency file was not found: '$requirementsPath'." }
+& $VenvPython "-m" "pip" "install" "-r" $requirementsPath "--quiet"
 Assert-NativeCommandSucceeded "requirements installation"
 Write-Host "      Dependencies installed successfully." -ForegroundColor Green
 
@@ -148,29 +184,19 @@ Write-Host "      Dependencies installed successfully." -ForegroundColor Green
 $EnvFile = Join-Path $ProjectRoot "agent.env"
 $existingServerUrl = Get-EnvFileValue -Path $EnvFile -Name "LAB_SERVER_URL"
 $existingSecret = Get-EnvFileValue -Path $EnvFile -Name "LAB_AGENT_TOKEN"
-if ([string]::IsNullOrWhiteSpace($existingSecret)) {
-    $existingSecret = Get-EnvFileValue -Path $EnvFile -Name "LAB_AGENT_ENROLLMENT_SECRET"
-}
+if ([string]::IsNullOrWhiteSpace($existingSecret)) { $existingSecret = Get-EnvFileValue -Path $EnvFile -Name "LAB_AGENT_ENROLLMENT_SECRET" }
 $existingDryRun = Get-EnvFileValue -Path $EnvFile -Name "LAB_POWER_DRY_RUN"
-if ([string]::IsNullOrWhiteSpace($existingDryRun)) {
-    $existingDryRun = "true"
-}
+if ([string]::IsNullOrWhiteSpace($existingDryRun)) { $existingDryRun = "true" }
 
 Write-Host "[5/8] Configuring agent connection settings..." -ForegroundColor Yellow
 if ($PSBoundParameters.ContainsKey("ServerUrl")) {
     $finalServerUrl = Assert-ValidServerUrl -Value $ServerUrl
 } else {
     $serverPrompt = "Central server URL (for example http://192.168.1.100:8000)"
-    if (-not [string]::IsNullOrWhiteSpace($existingServerUrl)) {
-        $serverPrompt += " [$existingServerUrl]"
-    }
+    if (-not [string]::IsNullOrWhiteSpace($existingServerUrl)) { $serverPrompt += " [$existingServerUrl]" }
     $enteredServerUrl = Read-Host $serverPrompt
-    if ([string]::IsNullOrWhiteSpace($enteredServerUrl)) {
-        $enteredServerUrl = $existingServerUrl
-    }
-    if ([string]::IsNullOrWhiteSpace($enteredServerUrl)) {
-        throw "A central server URL is required."
-    }
+    if ([string]::IsNullOrWhiteSpace($enteredServerUrl)) { $enteredServerUrl = $existingServerUrl }
+    if ([string]::IsNullOrWhiteSpace($enteredServerUrl)) { throw "A central server URL is required." }
     $finalServerUrl = Assert-ValidServerUrl -Value $enteredServerUrl
 }
 
@@ -180,28 +206,17 @@ try {
         $plainSecret = ConvertFrom-SecureValue -Value $EnrollmentSecret
     } else {
         $secretPrompt = "Agent enrollment secret"
-        if (-not [string]::IsNullOrWhiteSpace($existingSecret)) {
-            $secretPrompt += " (press Enter to keep the existing secret)"
-        }
+        if (-not [string]::IsNullOrWhiteSpace($existingSecret)) { $secretPrompt += " (press Enter to keep the existing secret)" }
         $enteredSecret = Read-Host $secretPrompt -AsSecureString
         $plainSecret = ConvertFrom-SecureValue -Value $enteredSecret
-        if ([string]::IsNullOrWhiteSpace($plainSecret)) {
-            $plainSecret = $existingSecret
-        }
+        if ([string]::IsNullOrWhiteSpace($plainSecret)) { $plainSecret = $existingSecret }
     }
-
-    if ([string]::IsNullOrWhiteSpace($plainSecret)) {
-        throw "An enrollment secret is required. It was not saved or displayed."
-    }
-    if ($plainSecret -match "[\r\n]") {
-        throw "The enrollment secret cannot contain a newline."
-    }
+    if ([string]::IsNullOrWhiteSpace($plainSecret)) { throw "An enrollment secret is required. It was not saved or displayed." }
+    if ($plainSecret -match "[\r\n]") { throw "The enrollment secret cannot contain a newline." }
 
     $agentDataDirectory = Join-Path $ProjectRoot ".lab_management"
     $agentIdPath = Join-Path $agentDataDirectory "agent_id"
-    if (-not (Test-Path -LiteralPath $agentDataDirectory)) {
-        New-Item -ItemType Directory -Path $agentDataDirectory -Force | Out-Null
-    }
+    if (-not (Test-Path -LiteralPath $agentDataDirectory)) { New-Item -ItemType Directory -Path $agentDataDirectory -Force | Out-Null }
 
     $envContent = @(
         "# Computer Lab Management - Agent Configuration for Windows",
@@ -218,40 +233,32 @@ try {
     )
     Set-Content -LiteralPath $EnvFile -Value $envContent -Encoding UTF8
 
-    # The task runs as LocalSystem. Keep the config and stable machine identity
-    # readable by that account without granting access to ordinary users.
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     & icacls.exe $EnvFile "/inheritance:r" "/grant:r" "$currentIdentity`:(F)" "*S-1-5-18:(R)" "*S-1-5-32-544:(F)" | Out-Null
     Assert-NativeCommandSucceeded "agent.env permission configuration"
     & icacls.exe $agentDataDirectory "/inheritance:r" "/grant:r" "$currentIdentity`:(F)" "*S-1-5-18:(F)" "*S-1-5-32-544:(F)" | Out-Null
     Assert-NativeCommandSucceeded "agent identity directory permission configuration"
 } finally {
-    # Do not deliberately retain a second copy after the configuration file has
-    # been written. The running agent reads the protected file when it starts.
     $plainSecret = $null
 }
 Write-Host "      Configuration saved to $EnvFile" -ForegroundColor Green
 Write-Host "      LAB_POWER_DRY_RUN remains '$existingDryRun'." -ForegroundColor Green
 
-# 6. Validate the server and register through the existing agent registration
-# implementation. A successful response is the connection verification.
+# 6. Validate the server and register through the existing agent registration implementation.
 Write-Host "[6/8] Registering this machine with the central server..." -ForegroundColor Yellow
 $healthUrl = "$($finalServerUrl.TrimEnd('/'))/api/health"
 try {
     $healthResponse = Invoke-RestMethod -Uri $healthUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
-    if ($healthResponse.status -ne "running") {
-        throw "Unexpected health response."
-    }
+    if ($healthResponse.status -ne "running") { throw "Unexpected health response." }
 } catch {
     throw "The central server is not reachable at $healthUrl. Check the LAN URL, firewall, and server status. Details: $($_.Exception.Message)"
 }
 
 $registrationOutput = & $VenvPython "-c" "from agent.main import register; import json; print(json.dumps(register()))" 2>&1
 Assert-NativeCommandSucceeded "Agent registration"
-Write-Host "      Server connection verified and machine registered: $registrationOutput" -ForegroundColor Green
+Write-Host "      Server connection verified and machine registered." -ForegroundColor Green
 
-# 7. A single, stable task identity is registered with -Force. This replaces
-# the previous task in place and never creates a duplicate scheduled task.
+# 7. Configure one stable scheduled task identity.
 Write-Host "[7/8] Configuring Windows auto-start..." -ForegroundColor Yellow
 $TaskName = "LabManagement Agent"
 $TaskPath = "\"
@@ -262,8 +269,7 @@ $TaskPrincipal = New-ScheduledTaskPrincipal -UserID "SYSTEM" -LogonType ServiceA
 Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $TaskAction -Trigger $TaskTrigger -Settings $TaskSettings -Principal $TaskPrincipal -Force | Out-Null
 Write-Host "      Windows scheduled task configured." -ForegroundColor Green
 
-# 8. Start it now and ensure Windows reports it as running. Registration above
-# already proves the agent can authenticate and reach the server.
+# 8. Start it now and verify Windows reports it as running.
 Write-Host "[8/8] Starting the LabManagement agent..." -ForegroundColor Yellow
 Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
 Start-Sleep -Seconds 2
