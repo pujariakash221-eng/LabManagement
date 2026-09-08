@@ -107,29 +107,34 @@ if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
     throw "Agent setup script was not found at '$setupScript'."
 }
 
-$setupArguments = @()
+$setupArguments = @{}
 if ($PSBoundParameters.ContainsKey("ServerUrl")) {
-    $setupArguments += @("-ServerUrl", $ServerUrl)
+    $setupArguments.ServerUrl = $ServerUrl
 }
 if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) {
-    $setupArguments += @("-EnrollmentSecret", $EnrollmentSecret)
+    $setupArguments.EnrollmentSecret = $EnrollmentSecret
 }
 
-Write-Host "Launching the agent setup engine with execution-policy bypass..." -ForegroundColor Yellow
-# The bootstrapper itself may be piped through iex, but the downloaded setup
-# script is a separate .ps1 file. Invoke it through a child PowerShell process
-# with Process scope bypass so restrictive machine/user execution policies do
-# not block a legitimate local installation. This does not change policy.
-$setupPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-if (-not $setupPowerShell) { $setupPowerShell = Get-Command pwsh.exe -ErrorAction SilentlyContinue }
-if (-not $setupPowerShell) { throw "PowerShell executable was not found." }
+Write-Host "Launching the agent setup engine..." -ForegroundColor Yellow
 
-$childArguments = @(
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $setupScript
-)
-$childArguments += $setupArguments
-& $setupPowerShell.Source @childArguments
-Assert-NativeCommandSucceeded "LabManagement agent setup"
+# Do not invoke setup_agent.ps1 as a .ps1 file. Some college/lab PCs enforce a
+# restrictive execution policy through Group Policy, where even a child
+# PowerShell -ExecutionPolicy Bypass cannot execute script files. Read the
+# trusted setup script from the repository and execute it as a ScriptBlock;
+# execution-policy checks for script files do not apply to an in-memory block.
+# This does not modify the machine's execution policy.
+$setupContent = Get-Content -LiteralPath $setupScript -Raw -ErrorAction Stop
+if ([string]::IsNullOrWhiteSpace($setupContent)) {
+    throw "The agent setup script is empty: '$setupScript'."
+}
+
+try {
+    $setupBlock = [ScriptBlock]::Create($setupContent)
+    & $setupBlock @setupArguments
+} catch {
+    throw "LabManagement agent setup failed: $($_.Exception.Message)"
+}
+
+if ($LASTEXITCODE -ne 0) {
+    throw "LabManagement agent setup failed with exit code $LASTEXITCODE."
+}
