@@ -6,19 +6,21 @@ param(
 )
 
 # ==============================================================================
-# LabManagement one-command Windows installer
+# LabManagement one-command Windows agent installer
 # ==============================================================================
-# This bootstrapper deliberately does not download a private repository from
-# raw.githubusercontent.com. It reuses an existing checkout when found, or uses
-# authenticated Git/GitHub CLI cloning before handing off to setup_agent.ps1.
+# Works from any PowerShell working directory, including C:\Windows\System32.
+# The repository is public, so Git is optional: Git clone is preferred and the
+# public GitHub ZIP archive is used as a fallback when Git is unavailable.
 #
-# Run PowerShell as Administrator. See README.md for the one-line, private-repo
-# installation command and GitHub authentication requirements.
+# One-line installation:
+#   irm https://raw.githubusercontent.com/pujariakash221-eng/LabManagement/main/install-agent.ps1 | iex
+#
+# Run PowerShell as Administrator because the agent uses a SYSTEM startup task.
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
 $RepositoryUrl = "https://github.com/pujariakash221-eng/LabManagement.git"
-$RepositorySlug = "pujariakash221-eng/LabManagement"
+$ArchiveUrl = "https://github.com/pujariakash221-eng/LabManagement/archive/refs/heads/main.zip"
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -27,26 +29,14 @@ function Test-IsAdministrator {
 }
 
 function Test-LabManagementRepository {
-    param([string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
 
-    if ([string]::IsNullOrWhiteSpace($Path)) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
         return $false
     }
-    return (Test-Path -LiteralPath (Join-Path $Path ".git")) -and
-        (Test-Path -LiteralPath (Join-Path $Path "deploy\windows\setup_agent.ps1"))
-}
 
-function Get-CurrentRepositoryRoot {
-    param([string]$GitPath)
-
-    if (-not $GitPath) {
-        return $null
-    }
-    $root = & $GitPath -C (Get-Location).Path rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0 -and (Test-LabManagementRepository -Path $root)) {
-        return (Resolve-Path -LiteralPath $root).Path
-    }
-    return $null
+    return (Test-Path -LiteralPath (Join-Path $Path "deploy\windows\setup_agent.ps1") -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $Path "requirements.txt") -PathType Leaf)
 }
 
 function Assert-NativeCommandSucceeded {
@@ -57,6 +47,17 @@ function Assert-NativeCommandSucceeded {
     }
 }
 
+function Get-GitPath {
+    $command = Get-Command git.exe -ErrorAction SilentlyContinue
+    if (-not $command) {
+        $command = Get-Command git -ErrorAction SilentlyContinue
+    }
+    if ($command) {
+        return $command.Source
+    }
+    return $null
+}
+
 if (-not (Test-IsAdministrator)) {
     throw "Run this installer from an elevated PowerShell window. Administrator rights are required for the LocalSystem auto-start task."
 }
@@ -64,87 +65,86 @@ if (-not (Test-IsAdministrator)) {
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  LabManagement Windows Agent Installer" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "This installer is independent of the current PowerShell directory." -ForegroundColor Gray
 
-$gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
-if (-not $gitCommand) {
-    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+# Normalize and validate the installation directory. Never inspect or execute
+# Git commands against (Get-Location); this installer may be launched from
+# C:\Windows\System32, Downloads, Desktop, or anywhere else.
+if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
+    throw "InstallDirectory cannot be empty."
 }
-$gitPath = if ($gitCommand) { $gitCommand.Source } else { $null }
-if ($gitPath) {
-    Write-Host "Git detected: $gitPath" -ForegroundColor Green
-} else {
-    Write-Host "Git was not detected." -ForegroundColor Yellow
-}
+$InstallDirectory = [Environment]::ExpandEnvironmentVariables($InstallDirectory)
+$InstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory)
 
-# Prefer the checked-out repository containing this script, then an existing
-# requested installation directory, then a repository containing the caller's
-# current location. None of these depend on the PowerShell working directory.
-$scriptRepository = if (Test-LabManagementRepository -Path $PSScriptRoot) {
-    (Resolve-Path -LiteralPath $PSScriptRoot).Path
+if (Test-LabManagementRepository -Path $InstallDirectory) {
+    $projectRoot = (Resolve-Path -LiteralPath $InstallDirectory).Path
+    Write-Host "Existing LabManagement installation found: $projectRoot" -ForegroundColor Green
 } else {
-    $null
-}
-$targetRepository = if (Test-LabManagementRepository -Path $InstallDirectory) {
-    (Resolve-Path -LiteralPath $InstallDirectory).Path
-} else {
-    $null
-}
-$currentRepository = Get-CurrentRepositoryRoot -GitPath $gitPath
-$projectRoot = $scriptRepository
-if (-not $projectRoot) { $projectRoot = $targetRepository }
-if (-not $projectRoot) { $projectRoot = $currentRepository }
-
-if ($projectRoot) {
-    Write-Host "Using existing LabManagement repository: $projectRoot" -ForegroundColor Green
-} else {
-    if (-not $gitPath) {
-        throw "Git is required to clone the private LabManagement repository. Install Git for Windows from https://git-scm.com/download/win, then rerun this command."
+    if (Test-Path -LiteralPath $InstallDirectory -PathType Container) {
+        $contents = @(Get-ChildItem -LiteralPath $InstallDirectory -Force -ErrorAction Stop)
+        if ($contents.Count -gt 0) {
+            throw "Install directory '$InstallDirectory' already exists and is not a LabManagement installation. Use -InstallDirectory with an empty directory or remove the incomplete installation directory."
+        }
+    } elseif (Test-Path -LiteralPath $InstallDirectory) {
+        throw "Install path '$InstallDirectory' exists but is not a directory. Choose another -InstallDirectory."
     }
 
     $parentDirectory = Split-Path -Parent $InstallDirectory
-    if ([string]::IsNullOrWhiteSpace($parentDirectory)) {
-        throw "InstallDirectory must include a parent directory."
-    }
-    if (Test-Path -LiteralPath $InstallDirectory) {
-        $contents = Get-ChildItem -LiteralPath $InstallDirectory -Force -ErrorAction Stop
-        if ($contents.Count -gt 0) {
-            throw "Install directory '$InstallDirectory' already exists but is not a LabManagement checkout. Choose an empty directory with -InstallDirectory."
-        }
-    }
-    if (-not (Test-Path -LiteralPath $parentDirectory)) {
+    if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) {
         New-Item -ItemType Directory -Path $parentDirectory -Force | Out-Null
     }
 
-    Write-Host "The LabManagement repository is private; GitHub authentication is required before cloning." -ForegroundColor Yellow
-    $ghCommand = Get-Command gh.exe -ErrorAction SilentlyContinue
-    if (-not $ghCommand) {
-        $ghCommand = Get-Command gh -ErrorAction SilentlyContinue
-    }
-
-    if ($ghCommand) {
-        & $ghCommand.Source auth status -h github.com 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Opening GitHub CLI authentication. Sign in to an account with repository access." -ForegroundColor Yellow
-            & $ghCommand.Source auth login --hostname github.com --git-protocol https --web
-            Assert-NativeCommandSucceeded "GitHub CLI authentication"
-        }
-        & $ghCommand.Source repo clone $RepositorySlug $InstallDirectory
-        Assert-NativeCommandSucceeded "Private repository clone"
+    $gitPath = Get-GitPath
+    if ($gitPath) {
+        Write-Host "Git detected: $gitPath" -ForegroundColor Green
+        Write-Host "Cloning the public LabManagement repository..." -ForegroundColor Yellow
+        & $gitPath clone --depth 1 $RepositoryUrl $InstallDirectory
+        Assert-NativeCommandSucceeded "LabManagement Git clone"
     } else {
-        Write-Host "GitHub CLI was not found. Git will now use Git Credential Manager or its normal secure credential prompt." -ForegroundColor Yellow
-        Write-Host "Sign in with a GitHub account or a fine-grained token that has Contents: Read access to $RepositorySlug." -ForegroundColor Yellow
-        & $gitPath clone $RepositoryUrl $InstallDirectory
-        Assert-NativeCommandSucceeded "Private repository clone"
+        Write-Host "Git was not detected. Using the public GitHub ZIP archive." -ForegroundColor Yellow
+        $temporaryRoot = Join-Path $env:TEMP ("LabManagement-install-" + [Guid]::NewGuid().ToString("N"))
+        $archivePath = Join-Path $temporaryRoot "LabManagement-main.zip"
+        $extractPath = Join-Path $temporaryRoot "extracted"
+
+        try {
+            New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+            Write-Host "Downloading LabManagement..." -ForegroundColor Yellow
+            Invoke-WebRequest -Uri $ArchiveUrl -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
+            if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+                throw "GitHub ZIP download did not produce an archive."
+            }
+
+            Write-Host "Extracting LabManagement..." -ForegroundColor Yellow
+            Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+            $extractedRoot = Join-Path $extractPath "LabManagement-main"
+            if (-not (Test-LabManagementRepository -Path $extractedRoot)) {
+                throw "The downloaded GitHub archive does not contain a valid LabManagement repository."
+            }
+
+            New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
+            Get-ChildItem -LiteralPath $extractedRoot -Force | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $InstallDirectory -Recurse -Force
+            }
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     if (-not (Test-LabManagementRepository -Path $InstallDirectory)) {
-        throw "Clone completed but the expected LabManagement setup script was not found at '$InstallDirectory'."
+        throw "Installation download completed, but the expected LabManagement files were not found at '$InstallDirectory'."
     }
+
     $projectRoot = (Resolve-Path -LiteralPath $InstallDirectory).Path
-    Write-Host "Private repository cloned to: $projectRoot" -ForegroundColor Green
+    Write-Host "LabManagement installed to: $projectRoot" -ForegroundColor Green
 }
 
 $setupScript = Join-Path $projectRoot "deploy\windows\setup_agent.ps1"
+if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
+    throw "Agent setup script was not found at '$setupScript'."
+}
+
 $setupArguments = @{}
 if ($PSBoundParameters.ContainsKey("ServerUrl")) {
     $setupArguments.ServerUrl = $ServerUrl
@@ -153,6 +153,6 @@ if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) {
     $setupArguments.EnrollmentSecret = $EnrollmentSecret
 }
 
-# All environment setup, configuration, registration, task creation, startup,
-# and connection verification remain in the established setup script.
+Write-Host "Launching the agent setup engine..." -ForegroundColor Yellow
 & $setupScript @setupArguments
+Assert-NativeCommandSucceeded "LabManagement agent setup"
