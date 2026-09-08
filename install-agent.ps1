@@ -5,19 +5,6 @@ param(
     [SecureString]$EnrollmentSecret
 )
 
-# ==============================================================================
-# LabManagement one-command Windows agent installer
-# ==============================================================================
-# Works from any PowerShell working directory, including C:\Windows\System32.
-# The repository is public, so Git is optional: Git clone is preferred and the
-# public GitHub ZIP archive is used as a fallback when Git is unavailable.
-#
-# One-line installation:
-#   irm https://raw.githubusercontent.com/pujariakash221-eng/LabManagement/main/install-agent.ps1 | iex
-#
-# Run PowerShell as Administrator because the agent uses a SYSTEM startup task.
-# ==============================================================================
-
 $ErrorActionPreference = "Stop"
 $RepositoryUrl = "https://github.com/pujariakash221-eng/LabManagement.git"
 $ArchiveUrl = "https://github.com/pujariakash221-eng/LabManagement/archive/refs/heads/main.zip"
@@ -30,31 +17,20 @@ function Test-IsAdministrator {
 
 function Test-LabManagementRepository {
     param([Parameter(Mandatory = $true)][string]$Path)
-
-    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
-        return $false
-    }
-
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
     return (Test-Path -LiteralPath (Join-Path $Path "deploy\windows\setup_agent.ps1") -PathType Leaf) -and
         (Test-Path -LiteralPath (Join-Path $Path "requirements.txt") -PathType Leaf)
 }
 
 function Assert-NativeCommandSucceeded {
     param([Parameter(Mandatory = $true)][string]$Description)
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Description failed with exit code $LASTEXITCODE."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE." }
 }
 
 function Get-GitPath {
     $command = Get-Command git.exe -ErrorAction SilentlyContinue
-    if (-not $command) {
-        $command = Get-Command git -ErrorAction SilentlyContinue
-    }
-    if ($command) {
-        return $command.Source
-    }
+    if (-not $command) { $command = Get-Command git -ErrorAction SilentlyContinue }
+    if ($command) { return $command.Source }
     return $null
 }
 
@@ -67,12 +43,7 @@ Write-Host "  LabManagement Windows Agent Installer" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "This installer is independent of the current PowerShell directory." -ForegroundColor Gray
 
-# Normalize and validate the installation directory. Never inspect or execute
-# Git commands against (Get-Location); this installer may be launched from
-# C:\Windows\System32, Downloads, Desktop, or anywhere else.
-if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
-    throw "InstallDirectory cannot be empty."
-}
+if ([string]::IsNullOrWhiteSpace($InstallDirectory)) { throw "InstallDirectory cannot be empty." }
 $InstallDirectory = [Environment]::ExpandEnvironmentVariables($InstallDirectory)
 $InstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory)
 
@@ -105,22 +76,14 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
         $temporaryRoot = Join-Path $env:TEMP ("LabManagement-install-" + [Guid]::NewGuid().ToString("N"))
         $archivePath = Join-Path $temporaryRoot "LabManagement-main.zip"
         $extractPath = Join-Path $temporaryRoot "extracted"
-
         try {
             New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
-            Write-Host "Downloading LabManagement..." -ForegroundColor Yellow
             Invoke-WebRequest -Uri $ArchiveUrl -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
-            if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
-                throw "GitHub ZIP download did not produce an archive."
-            }
-
-            Write-Host "Extracting LabManagement..." -ForegroundColor Yellow
             Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
             $extractedRoot = Join-Path $extractPath "LabManagement-main"
             if (-not (Test-LabManagementRepository -Path $extractedRoot)) {
                 throw "The downloaded GitHub archive does not contain a valid LabManagement repository."
             }
-
             New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
             Get-ChildItem -LiteralPath $extractedRoot -Force | ForEach-Object {
                 Copy-Item -LiteralPath $_.FullName -Destination $InstallDirectory -Recurse -Force
@@ -133,9 +96,8 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
     }
 
     if (-not (Test-LabManagementRepository -Path $InstallDirectory)) {
-        throw "Installation download completed, but the expected LabManagement files were not found at '$InstallDirectory'."
+        throw "Installation completed, but the expected LabManagement files were not found at '$InstallDirectory'."
     }
-
     $projectRoot = (Resolve-Path -LiteralPath $InstallDirectory).Path
     Write-Host "LabManagement installed to: $projectRoot" -ForegroundColor Green
 }
@@ -145,14 +107,29 @@ if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
     throw "Agent setup script was not found at '$setupScript'."
 }
 
-$setupArguments = @{}
+$setupArguments = @()
 if ($PSBoundParameters.ContainsKey("ServerUrl")) {
-    $setupArguments.ServerUrl = $ServerUrl
+    $setupArguments += @("-ServerUrl", $ServerUrl)
 }
 if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) {
-    $setupArguments.EnrollmentSecret = $EnrollmentSecret
+    $setupArguments += @("-EnrollmentSecret", $EnrollmentSecret)
 }
 
-Write-Host "Launching the agent setup engine..." -ForegroundColor Yellow
-& $setupScript @setupArguments
+Write-Host "Launching the agent setup engine with execution-policy bypass..." -ForegroundColor Yellow
+# The bootstrapper itself may be piped through iex, but the downloaded setup
+# script is a separate .ps1 file. Invoke it through a child PowerShell process
+# with Process scope bypass so restrictive machine/user execution policies do
+# not block a legitimate local installation. This does not change policy.
+$setupPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+if (-not $setupPowerShell) { $setupPowerShell = Get-Command pwsh.exe -ErrorAction SilentlyContinue }
+if (-not $setupPowerShell) { throw "PowerShell executable was not found." }
+
+$childArguments = @(
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $setupScript
+)
+$childArguments += $setupArguments
+& $setupPowerShell.Source @childArguments
 Assert-NativeCommandSucceeded "LabManagement agent setup"
