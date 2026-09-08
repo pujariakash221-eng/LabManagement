@@ -13,6 +13,18 @@ def _agent_headers(enrollment_secret: str) -> dict[str, str]:
     return {"X-Agent-Token": enrollment_secret}
 
 
+def _response_detail(response: httpx.Response) -> str:
+    """Return a safe, useful server error without exposing request credentials."""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get("detail"):
+            return str(payload["detail"])
+    except ValueError:
+        pass
+    text = response.text.strip()
+    return text[:500] if text else "no response body"
+
+
 def register_agent(server_url: str, agent_info: dict[str, str], enrollment_secret: str) -> dict[str, str]:
     """Register an agent and return the server's validated response."""
     endpoint = f"{server_url.rstrip('/')}/api/agents/register"
@@ -21,8 +33,9 @@ def register_agent(server_url: str, agent_info: dict[str, str], enrollment_secre
         response.raise_for_status()
         result = response.json()
     except httpx.HTTPStatusError as exc:
+        detail = _response_detail(exc.response)
         raise AgentRegistrationError(
-            f"server rejected registration with HTTP {exc.response.status_code}"
+            f"server rejected registration with HTTP {exc.response.status_code}: {detail}"
         ) from exc
     except httpx.RequestError as exc:
         raise AgentRegistrationError(f"server unavailable: {exc}") from exc
@@ -43,7 +56,7 @@ def send_heartbeat(server_url: str, agent_id: str, enrollment_secret: str) -> di
         result = response.json()
     except httpx.HTTPStatusError as exc:
         raise AgentRegistrationError(
-            f"server rejected heartbeat with HTTP {exc.response.status_code}"
+            f"server rejected heartbeat with HTTP {exc.response.status_code}: {_response_detail(exc.response)}"
         ) from exc
     except httpx.RequestError as exc:
         raise AgentRegistrationError(f"server unavailable: {exc}") from exc
