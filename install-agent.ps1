@@ -18,8 +18,9 @@ function Test-IsAdministrator {
 function Test-LabManagementRepository {
     param([Parameter(Mandatory = $true)][string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
-    return (Test-Path -LiteralPath (Join-Path $Path "deploy\windows\setup_agent.ps1") -PathType Leaf) -and
-        (Test-Path -LiteralPath (Join-Path $Path "requirements.txt") -PathType Leaf)
+    $setupPath = Join-Path $Path "deploy\windows\setup_agent.ps1"
+    $requirementsPath = Join-Path $Path "requirements.txt"
+    return (Test-Path -LiteralPath $setupPath -PathType Leaf) -and (Test-Path -LiteralPath $requirementsPath -PathType Leaf)
 }
 
 function Assert-NativeCommandSucceeded {
@@ -45,7 +46,7 @@ Write-Host "This installer is independent of the current PowerShell directory." 
 
 if ([string]::IsNullOrWhiteSpace($InstallDirectory)) { throw "InstallDirectory cannot be empty." }
 $InstallDirectory = [Environment]::ExpandEnvironmentVariables($InstallDirectory)
-$InstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory)
+try { $InstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory) } catch { throw "InstallDirectory is invalid: '$InstallDirectory'. Details: $($_.Exception.Message)" }
 
 if (Test-LabManagementRepository -Path $InstallDirectory) {
     $projectRoot = (Resolve-Path -LiteralPath $InstallDirectory).Path
@@ -61,6 +62,7 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
     }
 
     $parentDirectory = Split-Path -Parent $InstallDirectory
+    if ([string]::IsNullOrWhiteSpace($parentDirectory)) { throw "Could not determine the parent directory for '$InstallDirectory'." }
     if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) {
         New-Item -ItemType Directory -Path $parentDirectory -Force | Out-Null
     }
@@ -79,11 +81,10 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
         try {
             New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
             Invoke-WebRequest -Uri $ArchiveUrl -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
+            if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "GitHub archive download did not produce an archive file." }
             Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
             $extractedRoot = Join-Path $extractPath "LabManagement-main"
-            if (-not (Test-LabManagementRepository -Path $extractedRoot)) {
-                throw "The downloaded GitHub archive does not contain a valid LabManagement repository."
-            }
+            if (-not (Test-LabManagementRepository -Path $extractedRoot)) { throw "The downloaded GitHub archive does not contain a valid LabManagement repository." }
             New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
             Get-ChildItem -LiteralPath $extractedRoot -Force | ForEach-Object {
                 Copy-Item -LiteralPath $_.FullName -Destination $InstallDirectory -Recurse -Force
@@ -102,39 +103,42 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
     Write-Host "LabManagement installed to: $projectRoot" -ForegroundColor Green
 }
 
+if ([string]::IsNullOrWhiteSpace($projectRoot) -or -not (Test-Path -LiteralPath $projectRoot -PathType Container)) {
+    throw "Installer project root is invalid: '$projectRoot'."
+}
+
 $setupScript = Join-Path $projectRoot "deploy\windows\setup_agent.ps1"
 if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
     throw "Agent setup script was not found at '$setupScript'."
 }
 
-$setupArguments = @{}
-if ($PSBoundParameters.ContainsKey("ServerUrl")) {
-    $setupArguments.ServerUrl = $ServerUrl
-}
-if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) {
-    $setupArguments.EnrollmentSecret = $EnrollmentSecret
-}
+$setupArguments = @{ ProjectRoot = $projectRoot }
+if ($PSBoundParameters.ContainsKey("ServerUrl")) { $setupArguments.ServerUrl = $ServerUrl }
+if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) { $setupArguments.EnrollmentSecret = $EnrollmentSecret }
 
 Write-Host "Launching the agent setup engine..." -ForegroundColor Yellow
+Write-Host "      Setup source: in-memory ScriptBlock" -ForegroundColor Gray
+Write-Host "      Project root: $projectRoot" -ForegroundColor Gray
 
-# Do not invoke setup_agent.ps1 as a .ps1 file. Some college/lab PCs enforce a
-# restrictive execution policy through Group Policy, where even a child
-# PowerShell -ExecutionPolicy Bypass cannot execute script files. Read the
-# trusted setup script from the repository and execute it as a ScriptBlock;
-# execution-policy checks for script files do not apply to an in-memory block.
-# This does not modify the machine's execution policy.
+# Execute the setup engine in-memory so restrictive Windows execution policies
+# do not block the installer. This never changes execution policy.
 $setupContent = Get-Content -LiteralPath $setupScript -Raw -ErrorAction Stop
-if ([string]::IsNullOrWhiteSpace($setupContent)) {
-    throw "The agent setup script is empty: '$setupScript'."
-}
+if ([string]::IsNullOrWhiteSpace($setupContent)) { throw "The agent setup script is empty: '$setupScript'." }
 
 try {
     $setupBlock = [ScriptBlock]::Create($setupContent)
     & $setupBlock @setupArguments
 } catch {
-    throw "LabManagement agent setup failed: $($_.Exception.Message)"
+    $errorMessage = $_.Exception.Message
+    $location = if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) { $_.InvocationInfo.PositionMessage.Trim() } else { "unknown" }
+    Write-Host "" -ForegroundColor Red
+    Write-Host "LabManagement agent setup failed." -ForegroundColor Red
+    Write-Host "  Phase/operation: see the last [n/8] phase above" -ForegroundColor Red
+    Write-Host "  Project root:    $projectRoot" -ForegroundColor Red
+    Write-Host "  Source mode:     in-memory ScriptBlock" -ForegroundColor Red
+    Write-Host "  Exception:       $errorMessage" -ForegroundColor Red
+    Write-Host "  Location:        $location" -ForegroundColor Red
+    throw
 }
 
-if ($LASTEXITCODE -ne 0) {
-    throw "LabManagement agent setup failed with exit code $LASTEXITCODE."
-}
+if ($LASTEXITCODE -ne 0) { throw "LabManagement agent setup failed with exit code $LASTEXITCODE." }
