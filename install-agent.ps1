@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepositoryUrl = "https://github.com/pujariakash221-eng/LabManagement.git"
 $ArchiveUrl = "https://github.com/pujariakash221-eng/LabManagement/archive/refs/heads/main.zip"
+$SetupScriptUrl = "https://raw.githubusercontent.com/pujariakash221-eng/LabManagement/main/deploy/windows/setup_agent.ps1"
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -24,8 +25,8 @@ function Test-LabManagementRepository {
 }
 
 function Assert-NativeCommandSucceeded {
-    param([Parameter(Mandatory = $true)][string]$Description)
-    if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE." }
+    param([Parameter(Mandatory = $true)][string]$Description,[int]$ExitCode = $LASTEXITCODE)
+    if ($ExitCode -ne 0) { throw "$Description failed with exit code $ExitCode." }
 }
 
 function Get-GitPath {
@@ -35,9 +36,7 @@ function Get-GitPath {
     return $null
 }
 
-if (-not (Test-IsAdministrator)) {
-    throw "Run this installer from an elevated PowerShell window. Administrator rights are required for the LocalSystem auto-start task."
-}
+if (-not (Test-IsAdministrator)) { throw "Run this installer from an elevated PowerShell window. Administrator rights are required for the LocalSystem auto-start task." }
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  LabManagement Windows Agent Installer" -ForegroundColor Cyan
@@ -54,25 +53,20 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
 } else {
     if (Test-Path -LiteralPath $InstallDirectory -PathType Container) {
         $contents = @(Get-ChildItem -LiteralPath $InstallDirectory -Force -ErrorAction Stop)
-        if ($contents.Count -gt 0) {
-            throw "Install directory '$InstallDirectory' already exists and is not a LabManagement installation. Use -InstallDirectory with an empty directory or remove the incomplete installation directory."
-        }
-    } elseif (Test-Path -LiteralPath $InstallDirectory) {
-        throw "Install path '$InstallDirectory' exists but is not a directory. Choose another -InstallDirectory."
-    }
+        if ($contents.Count -gt 0) { throw "Install directory '$InstallDirectory' already exists and is not a LabManagement installation. Use -InstallDirectory with an empty directory or remove the incomplete installation directory." }
+    } elseif (Test-Path -LiteralPath $InstallDirectory) { throw "Install path '$InstallDirectory' exists but is not a directory. Choose another -InstallDirectory." }
 
     $parentDirectory = Split-Path -Parent $InstallDirectory
     if ([string]::IsNullOrWhiteSpace($parentDirectory)) { throw "Could not determine the parent directory for '$InstallDirectory'." }
-    if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) {
-        New-Item -ItemType Directory -Path $parentDirectory -Force | Out-Null
-    }
+    if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) { New-Item -ItemType Directory -Path $parentDirectory -Force | Out-Null }
 
     $gitPath = Get-GitPath
     if ($gitPath) {
         Write-Host "Git detected: $gitPath" -ForegroundColor Green
         Write-Host "Cloning the public LabManagement repository..." -ForegroundColor Yellow
         & $gitPath clone --depth 1 $RepositoryUrl $InstallDirectory
-        Assert-NativeCommandSucceeded "LabManagement Git clone"
+        $cloneExitCode = $LASTEXITCODE
+        Assert-NativeCommandSucceeded "LabManagement Git clone" $cloneExitCode
     } else {
         Write-Host "Git was not detected. Using the public GitHub ZIP archive." -ForegroundColor Yellow
         $temporaryRoot = Join-Path $env:TEMP ("LabManagement-install-" + [Guid]::NewGuid().ToString("N"))
@@ -86,47 +80,41 @@ if (Test-LabManagementRepository -Path $InstallDirectory) {
             $extractedRoot = Join-Path $extractPath "LabManagement-main"
             if (-not (Test-LabManagementRepository -Path $extractedRoot)) { throw "The downloaded GitHub archive does not contain a valid LabManagement repository." }
             New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
-            Get-ChildItem -LiteralPath $extractedRoot -Force | ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination $InstallDirectory -Recurse -Force
-            }
+            Get-ChildItem -LiteralPath $extractedRoot -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $InstallDirectory -Recurse -Force }
         } finally {
-            if (Test-Path -LiteralPath $temporaryRoot) {
-                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
+            if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue }
         }
     }
-
-    if (-not (Test-LabManagementRepository -Path $InstallDirectory)) {
-        throw "Installation completed, but the expected LabManagement files were not found at '$InstallDirectory'."
-    }
+    if (-not (Test-LabManagementRepository -Path $InstallDirectory)) { throw "Installation completed, but the expected LabManagement files were not found at '$InstallDirectory'." }
     $projectRoot = (Resolve-Path -LiteralPath $InstallDirectory).Path
     Write-Host "LabManagement installed to: $projectRoot" -ForegroundColor Green
 }
 
-if ([string]::IsNullOrWhiteSpace($projectRoot) -or -not (Test-Path -LiteralPath $projectRoot -PathType Container)) {
-    throw "Installer project root is invalid: '$projectRoot'."
-}
+if ([string]::IsNullOrWhiteSpace($projectRoot) -or -not (Test-Path -LiteralPath $projectRoot -PathType Container)) { throw "Installer project root is invalid: '$projectRoot'." }
 
 $setupScript = Join-Path $projectRoot "deploy\windows\setup_agent.ps1"
-if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
-    throw "Agent setup script was not found at '$setupScript'."
-}
+if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) { throw "Agent setup script was not found at '$setupScript'." }
 
 $setupArguments = @{ ProjectRoot = $projectRoot }
 if ($PSBoundParameters.ContainsKey("ServerUrl")) { $setupArguments.ServerUrl = $ServerUrl }
 if ($PSBoundParameters.ContainsKey("EnrollmentSecret")) { $setupArguments.EnrollmentSecret = $EnrollmentSecret }
 
 Write-Host "Launching the agent setup engine..." -ForegroundColor Yellow
-Write-Host "      Setup source: in-memory ScriptBlock" -ForegroundColor Gray
+Write-Host "      Setup source: fresh GitHub main branch" -ForegroundColor Gray
 Write-Host "      Project root: $projectRoot" -ForegroundColor Gray
 
-# Execute the setup engine in-memory so restrictive Windows execution policies
-# do not block the installer. This never changes execution policy.
-$setupContent = Get-Content -LiteralPath $setupScript -Raw -ErrorAction Stop
-if ([string]::IsNullOrWhiteSpace($setupContent)) { throw "The agent setup script is empty: '$setupScript'." }
+# Always fetch the current setup engine from main. This is important for an
+# existing installation: rerunning the one-line installer must not execute a
+# stale setup_agent.ps1 left from an earlier installation attempt.
+try {
+    $setupContent = Invoke-RestMethod -Uri $SetupScriptUrl -Method Get -UseBasicParsing -ErrorAction Stop
+} catch {
+    throw "Could not download the current agent setup engine from GitHub. Details: $($_.Exception.Message)"
+}
+if ([string]::IsNullOrWhiteSpace($setupContent)) { throw "The downloaded agent setup script is empty." }
 
 try {
-    $setupBlock = [ScriptBlock]::Create($setupContent)
+    $setupBlock = [ScriptBlock]::Create([string]$setupContent)
     & $setupBlock @setupArguments
 } catch {
     $errorMessage = $_.Exception.Message
@@ -135,7 +123,7 @@ try {
     Write-Host "LabManagement agent setup failed." -ForegroundColor Red
     Write-Host "  Phase/operation: see the last [n/8] phase above" -ForegroundColor Red
     Write-Host "  Project root:    $projectRoot" -ForegroundColor Red
-    Write-Host "  Source mode:     in-memory ScriptBlock" -ForegroundColor Red
+    Write-Host "  Source mode:     fresh GitHub main ScriptBlock" -ForegroundColor Red
     Write-Host "  Exception:       $errorMessage" -ForegroundColor Red
     Write-Host "  Location:        $location" -ForegroundColor Red
     throw
