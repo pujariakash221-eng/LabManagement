@@ -58,28 +58,26 @@ LabManagement v1.0 is now **production-ready** for:
   - ✓ Generates unique agent ID
   - ✓ Tests server connectivity
   - ✓ Registers agent automatically
-  - ✓ Configures auto-start (scheduled task)
+  - ✓ Starts the agent directly and verifies heartbeat
   - ✓ Confirms success/failure
 - **No Hardcoding**: No C:\Users, D:\, /home/, 127.0.0.1, or 192.168.x.x in code
 - **Result**: Clean, automated installation experience
 
-### 3. ✅ WINDOWS AUTO-START
+### 3. ✅ WINDOWS DIRECT AGENT START
 - **Status**: COMPLETE
-- **Implementation**: Windows Task Scheduler (scheduled task)
+- **Implementation**: `System.Diagnostics.ProcessStartInfo`
 - **Configuration Files**:
-  - deploy/windows/setup_agent.ps1 (creates task)
+  - deploy/windows/setup_agent.ps1 (starts agent)
   - deploy/windows/start_agent.bat (manual launcher)
-  - deploy/windows/uninstall_agent.ps1 (removes task)
 - **Features**:
-  - ✓ Task runs at system startup
+  - ✓ Starts without blocking the installer
   - ✓ Uses project .venv Python
   - ✓ Uses correct project directory
   - ✓ Works without manual terminal
-  - ✓ Auto-restarts on crash (RestartCount=3, RestartInterval=5 min)
-  - ✓ No duplicate tasks (idempotent design)
-  - ✓ Task name: "LabManagement Agent"
-  - ✓ Principal: SYSTEM (highest privileges for power ops)
-- **Verification**: Setup script confirms successful task creation
+  - ✓ Verifies the process remains alive
+  - ✓ Verifies heartbeat
+  - ✓ Avoids duplicate direct agent processes on rerun
+- **Verification**: Setup script confirms successful process startup and heartbeat
 
 ### 4. ✅ AGENT CONFIGURATION (Windows-Compatible)
 - **Status**: COMPLETE
@@ -471,13 +469,12 @@ LabManagement v1.0 is now **production-ready** for:
   - Enter enrollment token
   - Enter workstation name
   - Confirm registration
-  - Verify auto-start
+  - Verify the running agent process
   - Verify ONLINE status
   - View screen
   - Test dry-run restart
   - Test dry-run shutdown
-  - Reboot PC
-  - Verify automatic startup
+  - Restart the agent manually after a reboot
   - Verify ONLINE status again
 - **Real Power Test**:
   - ✓ Clear warnings about LAB_POWER_DRY_RUN=false
@@ -522,7 +519,7 @@ LabManagement v1.0 is now **production-ready** for:
   - Power action does nothing
 - **Diagnostic Commands**:
   ```powershell
-  Get-ScheduledTask -TaskName "LabManagement Agent"
+  Get-Process -Name python
   Test-NetConnection SERVER_IP -Port 8000
   ```
 - **Common Issues & Solutions**: Documented

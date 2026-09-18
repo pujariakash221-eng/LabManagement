@@ -1,6 +1,6 @@
 # Windows agent installation
 
-Use this procedure to install a LabManagement agent from the private GitHub repository on a Windows workstation. Run it in an **elevated PowerShell window**; the installer registers a LocalSystem startup task.
+Use this procedure to install a LabManagement agent from the private GitHub repository on a Windows workstation. Run it in an **elevated PowerShell window**. The installer starts the agent directly and intentionally does not configure automatic Windows startup.
 
 ## One-command installation
 
@@ -19,7 +19,7 @@ During installation it asks for:
 1. The central server URL, for example `http://192.168.1.100:8000`.
 2. The agent enrollment secret. This uses PowerShell's secure prompt and is not echoed.
 
-It then creates or reuses `.venv`, installs `requirements.txt`, writes the protected `agent.env`, registers the computer through the existing agent code, creates/replaces the single `LabManagement Agent` scheduled task, starts it, and verifies registration with the server.
+It then creates or reuses `.venv`, installs `requirements.txt`, writes the protected `agent.env`, registers the computer through the existing agent code, starts one direct `agent.main` process, and verifies registration and heartbeat with the server.
 
 `LAB_POWER_DRY_RUN=true` is set on first installation. On later runs the current dry-run setting is preserved; it is never silently changed to `false`.
 
@@ -35,15 +35,15 @@ Or double-click `INSTALL_AGENT.bat` in the cloned repository. It requests the re
 
 ## Re-running and verification
 
-Re-running the command is safe. The installer reuses the existing virtual environment and machine identity, reuses settings if you submit an empty prompt where an existing value is shown, and updates the same `LabManagement Agent` task in place instead of creating another task.
+Re-running the command is safe. The installer reuses the existing virtual environment and machine identity, reuses settings if you submit an empty prompt where an existing value is shown, and does not start a duplicate agent process when the same agent is already running.
 
-After success, verify the task if needed:
+After success, verify the running process and dashboard status:
 
 ```powershell
-Get-ScheduledTask -TaskName "LabManagement Agent" -TaskPath "\" | Select-Object TaskName, State
+Get-Process -Name python | Where-Object { $_.Path -like "*LabManagement*.venv\Scripts\python.exe" }
 ```
 
-The server dashboard should show the workstation as online shortly after the installer completes. To move a trusted production lab out of safe mode, intentionally change `LAB_POWER_DRY_RUN=false` in its protected `agent.env` and restart the scheduled task; do not make that change until power-control authorization and testing are complete.
+The server dashboard should show the workstation as online shortly after the installer completes. The agent must be started manually again after a reboot. To move a trusted production lab out of safe mode, intentionally change `LAB_POWER_DRY_RUN=false` in its protected `agent.env` and restart the agent; do not make that change until power-control authorization and testing are complete.
 
 ## Private-repository raw links
 

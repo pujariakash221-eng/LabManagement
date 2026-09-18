@@ -98,7 +98,7 @@ git clone <REPOSITORY_URL>
 cd LabManagement
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\deploy\windows\setup_agent.ps1
-# Follow prompts, auto-starts at next boot
+# Follow prompts, starts the agent directly
 ```
 
 ### Uninstall (1 minute)
@@ -114,7 +114,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 |---|------|--------|-----------|
 | 1 | GitHub-ready repository | ✅ | FINALIZATION_CHECKLIST.md |
 | 2 | Windows agent easy installation | ✅ | RELEASE_NOTES.md |
-| 3 | Windows auto-start | ✅ | deploy/windows/setup_agent.ps1 |
+| 3 | Windows direct agent start | ✅ | deploy/windows/setup_agent.ps1 |
 | 4 | Real Windows shutdown | ✅ | agent/power.py |
 | 5 | Real Windows restart | ✅ | agent/power.py |
 | 6 | Dry-run safety preserved | ✅ | .env.example, README.md |
@@ -230,7 +230,7 @@ Before deploying to your lab, verify:
 | Windows agent | ✅ Working | RELEASE_NOTES.md |
 | Linux agent | ✅ Supported | README.md |
 | macOS agent | ✅ Supported | README.md |
-| Auto-start (Windows) | ✅ Scheduled Task | deploy/windows/setup_agent.ps1 |
+| Auto-start (Windows) | ❌ Intentionally not configured | deploy/windows/setup_agent.ps1 |
 | Auto-start (Linux) | ✅ Systemd | deploy/linux/setup_agent.sh |
 | Auto-start (macOS) | ✅ Launchd | deploy/macos/com.labmanagement.agent.plist |
 | Real shutdown | ✅ Working | agent/power.py, RELEASE_NOTES.md |

@@ -150,7 +150,7 @@ git clone https://github.com/pujariakash221-eng/LabManagement.git "$env:ProgramD
 
 The repository is private, so authenticate through Git Credential Manager when it opens (or use a repository-scoped fine-grained token with **Contents: Read** when Git prompts). Do not use a raw GitHub download and never put a token in a command line or configuration file.
 
-The installer detects Git, reuses an existing checkout, securely prompts for the central server URL and enrollment secret, creates/reuses `.venv`, installs dependencies, writes a protected `agent.env`, registers the machine, configures/replaces the single `LabManagement Agent` Windows startup task, starts it, and verifies its server connection. New installations use `LAB_POWER_DRY_RUN=true`; a later run preserves the existing dry-run setting.
+The installer detects Git, reuses an existing checkout, securely prompts for the central server URL and enrollment secret, creates/reuses `.venv`, installs dependencies, writes a protected `agent.env`, registers the machine, starts the agent directly, and verifies its server connection and heartbeat. It intentionally does not configure automatic Windows startup; the agent must be started manually again after a reboot. New installations use `LAB_POWER_DRY_RUN=true`; a later run preserves the existing dry-run setting.
 
 For a one-click option after cloning, double-click `INSTALL_AGENT.bat`; it requests the required UAC elevation. Full details, including reruns and verification, are in [INSTALL_AGENT.md](INSTALL_AGENT.md).
 

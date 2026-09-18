@@ -53,18 +53,17 @@
 - **Error Handling**: ✓ Clear error messages for missing Python
 - **Idempotency**: ✓ Safe to run twice (existing venv not recreated)
 
-### 3. ✅ WINDOWS AUTO-START
+### 3. ✅ WINDOWS DIRECT AGENT START
 - **Status**: Complete
-- **Method**: Windows Scheduled Task via PowerShell
+- **Method**: Direct ProcessStartInfo launch via PowerShell
 - **Features**:
-  - ✓ Runs at system startup
-  - ✓ Runs whether user logged in or not
-  - ✓ Auto-restarts if agent crashes (RestartCount=3, RestartInterval=5 min)
+  - ✓ Starts without blocking the installer
+  - ✓ Verifies the process remains alive
+  - ✓ Verifies heartbeat after launch
   - ✓ Uses project venv Python via absolute path
   - ✓ Dynamic ProjectRoot determination (no hardcoded D:\...)
-  - ✓ Task name: "LabManagement Agent"
-  - ✓ Principal: SYSTEM (runs with highest privileges for power ops)
-- **Configuration**: ✓ In deploy\windows\setup_agent.ps1 (steps 6-7)
+  - ✓ Avoids duplicate direct agent processes on installer reruns
+- **Configuration**: ✓ In deploy\windows\setup_agent.ps1 (step 7)
 
 ### 4. ✅ REAL WINDOWS SHUTDOWN
 - **Status**: Complete
@@ -272,7 +271,7 @@
   - ✓ Server startup
   - ✓ Agent installation (GitHub-based)
   - ✓ Agent configuration
-  - ✓ Agent auto-start
+  - ✓ Direct agent start
   - ✓ Dashboard access
   - ✓ Power control (dry-run and production modes)
   - ✓ Screen monitoring
@@ -382,7 +381,7 @@
   - ✓ No secrets in any file
   - ✓ No broken Windows paths
   - ✓ No Linux-only assumptions in Windows setup
-  - ✓ No duplicate startup tasks (idempotent design)
+  - ✓ No duplicate direct agent processes on rerun
   - ✓ No unsafe arbitrary command execution
   - ✓ No accidental real power during tests
   - ✓ No broken dashboard APIs
@@ -417,7 +416,7 @@
 6. **SECURITY.md** - Comprehensive security documentation
 
 ### Files Modified (Security & Completeness)
-1. **deploy/windows/setup_agent.ps1** - Added Windows scheduled task auto-start (steps 6-7)
+1. **deploy/windows/setup_agent.ps1** - Added direct agent startup and heartbeat verification (step 7)
 2. **.gitignore** - Expanded patterns
 3. **.env.example** - Verified complete
 4. **server/main.py** - Security headers added

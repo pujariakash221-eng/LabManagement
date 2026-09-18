@@ -41,7 +41,7 @@
 
 ### Files Modified (7)
 1. **deploy/windows/setup_agent.ps1**
-   - Added Windows scheduled task auto-start (steps 6-7)
+   - Added direct Windows agent startup (step 7)
    - Configures automatic startup at Windows boot
    - Auto-restarts on crash (3 retries, 5-min interval)
 
@@ -72,7 +72,7 @@
 ### Key Implementation Details
 
 **Windows Auto-Start (Critical Item 3)**
-- Uses Windows Scheduled Task via PowerShell
+- Uses a direct ProcessStartInfo launch via PowerShell
 - Task runs as SYSTEM with highest privileges
 - Runs at startup, always (logged in or not)
 - Auto-restarts if process crashes
@@ -154,7 +154,7 @@ cd LabManagement
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\deploy\windows\setup_agent.ps1
 # Script prompts for server URL and enrollment token
-# Automatically configures auto-start
+# Starts the agent directly; Windows boot startup is intentionally not configured
 ```
 
 **Agent Uninstall:**
@@ -195,7 +195,7 @@ The system is designed for college lab environments:
 Each PC installation is identical:
 - Clone repo
 - Run setup_agent.ps1 (1 interactive script)
-- Agent auto-starts, no manual configuration per PC
+- Agent starts directly after installation; Windows boot startup is intentionally not configured
 
 ---
 
@@ -313,7 +313,7 @@ Each PC installation is identical:
 ## READY TO DEPLOY
 
 ✅ **GitHub-Ready**: All secrets excluded, comprehensive .gitignore  
-✅ **Windows-Ready**: Native shutdown.exe commands, auto-start via task  
+✅ **Windows-Ready**: Native shutdown.exe commands and direct agent startup
 ✅ **Secure**: RBAC enforcement, audit logging, dry-run safety  
 ✅ **Documented**: 2000+ lines of guides, exact commands provided  
 ✅ **Tested**: 11/11 automated tests passing, server verified  
