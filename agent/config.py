@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _default_agent_id_path() -> Path:
+    if os.name == "nt":
+        program_data = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
+        return program_data / "LabManagement" / ".lab_management" / "agent_id"
+    return Path.home() / ".lab_management" / "agent_id"
+
+
 def _load_agent_env_fallback() -> None:
     if not os.getenv("LAB_AGENT_TOKEN") and not os.getenv("LAB_AGENT_ENROLLMENT_SECRET"):
         candidates = [
@@ -35,7 +42,7 @@ class AgentConfig:
 
     server_url: str = "http://127.0.0.1:8000"
     heartbeat_interval: float = 5.0
-    agent_id_path: Path = Path.home() / ".lab_management" / "agent_id"
+    agent_id_path: Path = _default_agent_id_path()
     enrollment_secret: str = ""
     power_dry_run: bool = True
 

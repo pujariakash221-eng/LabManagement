@@ -4,7 +4,6 @@
 # This script safely removes the LabManagement agent from this Windows computer.
 # It will:
 #   - Stop the running agent
-#   - Remove the Windows scheduled task
 #   - Optionally remove the configuration file
 #   - NOT delete the LabManagement source code repository
 #
@@ -24,7 +23,7 @@ Write-Host ""
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Resolve-Path "$ScriptDir\..\.."
 $EnvFile = Join-Path $ProjectRoot "agent.env"
-$AgentIdentityFile = Join-Path $ProjectRoot "agent_id.json"
+$AgentIdentityFile = Join-Path $ProjectRoot ".lab_management\agent_id"
 
 Write-Host "This will uninstall the LabManagement agent from this computer." -ForegroundColor Yellow
 Write-Host ""
@@ -36,7 +35,7 @@ if ($Confirm -ne "yes") {
 }
 
 Write-Host ""
-Write-Host "[1/3] Stopping the agent..." -ForegroundColor Yellow
+Write-Host "[1/2] Stopping the agent..." -ForegroundColor Yellow
 
 # Stop any running agent processes
 $AgentProcesses = Get-Process -Name "python" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match "agent" }
@@ -54,23 +53,7 @@ if ($AgentProcesses) {
     Write-Host "      No agent processes found." -ForegroundColor Green
 }
 
-Write-Host "[2/3] Removing Windows scheduled task..." -ForegroundColor Yellow
-
-$TaskName = "LabManagement Agent"
-$ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-
-if ($ExistingTask) {
-    try {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false | Out-Null
-        Write-Host "      Scheduled task removed." -ForegroundColor Green
-    } catch {
-        Write-Host "      Warning: Could not remove scheduled task: $_" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "      No scheduled task found." -ForegroundColor Green
-}
-
-Write-Host "[3/3] Cleaning up configuration..." -ForegroundColor Yellow
+Write-Host "[2/2] Cleaning up configuration..." -ForegroundColor Yellow
 
 $CleanConfig = Read-Host "Do you want to remove the agent configuration files? (yes/no)"
 
