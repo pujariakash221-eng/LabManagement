@@ -189,7 +189,7 @@ try {
 # Python/httpx logs INFO messages to stderr. Do not merge stderr into the PowerShell
 # success stream: PowerShell 5.1/7 can surface those harmless messages as
 # NativeCommandError records even when Python exits successfully.
-& $VenvPython '-c' 'from agent.main import register; import json; print(json.dumps(register()))' 2>$null
+& $VenvPython '-c' 'import logging; logging.disable(logging.CRITICAL); from agent.main import register; import json; print(json.dumps(register()))' 2>$null
 $registrationExitCode = $LASTEXITCODE
 Assert-NativeCommandSucceeded 'Agent registration' $registrationExitCode
 Write-Host '      Server connection verified and machine registered.' -ForegroundColor Green
