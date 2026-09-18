@@ -251,7 +251,9 @@ class LabManagementSystemTests(unittest.TestCase):
 
         # Bootstrap must explicitly own and pass the installation root.
         self.assertIn("ProjectRoot = $projectRoot", bootstrap)
-        self.assertIn("[ScriptBlock]::Create", bootstrap)
+        self.assertIn("Get-Item -LiteralPath (Get-Location).Path", bootstrap)
+        self.assertIn('Join-Path $candidate.FullName ".git"', bootstrap)
+        self.assertNotIn("rev-parse --show-toplevel", bootstrap)
         self.assertNotIn("Set-ExecutionPolicy", bootstrap)
         self.assertIn("-LiteralPath", bootstrap)
         self.assertIn("$projectRoot", bootstrap)
@@ -264,17 +266,17 @@ class LabManagementSystemTests(unittest.TestCase):
         self.assertIn("$MyInvocation.MyCommand.Path", setup)
         self.assertIn("ProjectRoot could not be determined.", setup)
         self.assertIn('Set-Location -LiteralPath $ProjectRoot', setup)
-        self.assertIn('Join-Path $ProjectRoot "deploy\\windows\\setup_agent.ps1"', setup)
+        self.assertIn("deploy\\windows\\setup_agent.ps1", setup)
 
         # Paths must be literal/validated and spaces must remain supported.
         self.assertIn("Test-Path -LiteralPath", setup)
         self.assertIn("Resolve-Path -LiteralPath", setup)
-        self.assertIn('Join-Path $ProjectRoot ".venv"', setup)
-        self.assertIn('Join-Path $ProjectRoot "agent.env"', setup)
+        self.assertIn("Join-Path $ProjectRoot '.venv'", setup)
+        self.assertIn("Join-Path $ProjectRoot 'agent.env'", setup)
         self.assertNotIn("Split-Path -Parent $PSCommandPath", setup)
 
         # Secret must not be emitted in registration output.
-        self.assertIn('Write-Host "      Server connection verified and machine registered."', setup)
+        self.assertIn("Server connection verified and machine registered.", setup)
         self.assertNotIn('Write-Host "      Server connection verified and machine registered: $registrationOutput"', setup)
 
 

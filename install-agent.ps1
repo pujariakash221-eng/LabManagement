@@ -55,9 +55,24 @@ function Get-CurrentRepositoryRoot {
     if (-not $GitPath) {
         return $null
     }
-    $root = & $GitPath -C (Get-Location).Path rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0 -and (Test-LabManagementProject -Path $root)) {
-        return (Resolve-Path -LiteralPath $root).Path
+
+    # Do not invoke Git from arbitrary directories such as C:\Windows\System32.
+    # PowerShell 5.1 can surface Git's diagnostic stderr as a NativeCommandError
+    # even when the installer intends to fall back to cloning.
+    $candidate = Get-Item -LiteralPath (Get-Location).Path -ErrorAction SilentlyContinue
+    while ($candidate) {
+        $gitMetadata = Join-Path $candidate.FullName ".git"
+        if (Test-Path -LiteralPath $gitMetadata) {
+            if (Test-LabManagementProject -Path $candidate.FullName) {
+                return (Resolve-Path -LiteralPath $candidate.FullName).Path
+            }
+            return $null
+        }
+        $parent = $candidate.Parent
+        if (-not $parent -or $parent.FullName -eq $candidate.FullName) {
+            break
+        }
+        $candidate = $parent
     }
     return $null
 }
@@ -261,7 +276,9 @@ if ($projectRoot -and -not $Update) {
 
 if (-not $SkipSetupHandoff) {
     $setupScript = Join-Path $projectRoot "deploy\windows\setup_agent.ps1"
-    $setupParameters = @{}
+    $setupParameters = @{
+        ProjectRoot = $projectRoot
+    }
     if ($PSBoundParameters.ContainsKey("ServerUrl")) {
         $setupParameters["ServerUrl"] = $ServerUrl
     }
@@ -271,5 +288,5 @@ if (-not $SkipSetupHandoff) {
 
     # Use exact named parameter binding only. This avoids the PowerShell 5.1
     # positional argument ambiguity during setup.
-    & $setupScript -ProjectRoot $projectRoot @setupParameters
+    & $setupScript @setupParameters
 }
