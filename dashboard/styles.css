@@ -486,6 +486,28 @@ a {
   overflow: hidden;
 }
 
+/* Each sidebar item is a focused workspace rather than a long scrolling page. */
+.section-panel:not(.view-active) {
+  display: none;
+}
+
+#metrics-summary {
+  display: none;
+}
+
+#metrics-summary.view-active {
+  display: block;
+}
+
+.section-panel.view-active {
+  animation: view-enter 0.18s ease-out;
+}
+
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .panel-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);

@@ -26,7 +26,7 @@ def run(config: AgentConfig | None = None) -> None:
     """Register this agent and keep sending heartbeats until interrupted."""
     config = config or AgentConfig.from_environment()
     agent_info = collect_system_info(config.agent_id_path)
-    logger.info("Starting Lab Management Agent for '%s' (Server: %s, Dry-Run: %s)", agent_info.get("hostname"), config.server_url, config.power_dry_run)
+    logger.info("Starting Lab Management Agent for '%s' (Server: %s)", agent_info.get("hostname"), config.server_url)
 
     while True:
         try:
@@ -55,9 +55,9 @@ def run(config: AgentConfig | None = None) -> None:
             command = fetch_power_command(config.server_url, agent_info["agent_id"], config.enrollment_secret)
             if command:
                 command_id, action = command.get("id"), command.get("action")
-                logger.info("Received power command '%s' (id: %s, dry_run=%s)", action, command_id, config.power_dry_run)
+                logger.info("Received power command '%s' (id: %s)", action, command_id)
                 try:
-                    result = execute_power_action(action, config.power_dry_run)
+                    result = execute_power_action(action)
                     logger.info("Power action '%s' executed with result: %s", action, result)
                 except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as exc:
                     logger.error("Power action '%s' failed: %s", action, exc)

@@ -487,6 +487,29 @@
     elements.powerModal.classList.remove('active');
   }
 
+  function setView(view) {
+    const views = {
+      dashboard: document.querySelector('#metrics-summary'),
+      computers: document.querySelector('#computers-section'),
+      discovery: document.querySelector('#discovery-section'),
+      activity: document.querySelector('#activity-section'),
+    };
+    Object.entries(views).forEach(([name, element]) => {
+      if (element) element.classList.toggle('view-active', name === view);
+    });
+    const links = {
+      dashboard: elements.navDashboard,
+      computers: elements.navComputers,
+      discovery: elements.navDiscovery,
+      activity: elements.navActivity,
+    };
+    Object.entries(links).forEach(([name, link]) => {
+      if (link) link.classList.toggle('active', name === view);
+    });
+    if (view === 'activity' && state.role === 'ADMIN') loadAudit();
+    window.history.replaceState(null, '', `#${view}`);
+  }
+
   async function executePowerAction() {
     if (!state.pendingPower) return;
     const { agent, action } = state.pendingPower;
@@ -718,7 +741,7 @@
         resultBadge = `<span class="badge-tag success">${escapeHtml(ev.result)}</span>`;
       } else if (resLower.includes('denied') || resLower.includes('failed') || resLower.includes('failure')) {
         resultBadge = `<span class="badge-tag danger">${escapeHtml(ev.result)}</span>`;
-      } else if (resLower.includes('queued') || resLower.includes('dry_run')) {
+      } else if (resLower.includes('queued')) {
         resultBadge = `<span class="badge-tag warning">${escapeHtml(ev.result)}</span>`;
       }
 
@@ -819,19 +842,8 @@
       if (!link) return;
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        navLinks.forEach((l) => l && l.classList.remove('active'));
-        link.classList.add('active');
-
         const targetId = link.getAttribute('href').replace('#', '');
-        let targetEl = null;
-        if (targetId === 'dashboard') targetEl = document.querySelector('#metrics-summary');
-        if (targetId === 'computers') targetEl = document.querySelector('#computers-section');
-        if (targetId === 'discovery') targetEl = document.querySelector('#discovery-section');
-        if (targetId === 'activity') targetEl = document.querySelector('#activity-section');
-
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        setView(targetId);
       });
     });
 
@@ -851,6 +863,8 @@
   async function init() {
     setupEvents();
     await loadSession();
+    const requestedView = window.location.hash.slice(1);
+    setView(['dashboard', 'computers', 'discovery', 'activity'].includes(requestedView) ? requestedView : 'dashboard');
     await loadAgents();
     await loadDiscovery();
 

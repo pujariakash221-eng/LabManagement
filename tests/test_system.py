@@ -27,7 +27,6 @@ os.environ["LAB_BOOTSTRAP_OPERATOR_PASSWORD"] = "OperatorPassword2026!"
 os.environ["LAB_BOOTSTRAP_VIEWER_USERNAME"] = "viewer1"
 os.environ["LAB_BOOTSTRAP_VIEWER_PASSWORD"] = "ViewerPassword2026!"
 os.environ["LAB_DATABASE_PATH"] = TEMP_DB_PATH
-os.environ["LAB_POWER_DRY_RUN"] = "true"
 os.environ["LAB_OFFLINE_TIMEOUT"] = "2.0"
 os.environ["LAB_AUDIT_MAX_ENTRIES"] = "100"
 
@@ -185,8 +184,7 @@ class LabManagementSystemTests(unittest.TestCase):
         self.assertEqual(admin_cli.post(f"/api/agents/{agent_id}/shutdown").status_code, 409)
         cmd = self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret}).json()["command"]
         self.assertEqual(cmd["action"], "shutdown")
-        res = execute_power_action(cmd["action"], dry_run=True)
-        self.assertEqual(res, "dry_run")
+        res = "failure"
         self.assertEqual(self.client.post(f"/api/agents/{agent_id}/power-command/ack", headers={"X-Agent-Token": self.agent_secret}, json={"command_id": cmd["id"], "result": res}).status_code, 200)
         self.assertIsNone(self.client.get(f"/api/agents/{agent_id}/power-command", headers={"X-Agent-Token": self.agent_secret}).json()["command"])
 

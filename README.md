@@ -84,7 +84,6 @@ LAB_INITIAL_ADMIN_USERNAME=admin
 LAB_INITIAL_ADMIN_PASSWORD=SetYourStrongAdminPasswordHere
 
 # Security & Safety Settings
-LAB_POWER_DRY_RUN=true
 LAB_SECURE_COOKIES=false    # Set true if deploying behind HTTPS
 LAB_DATABASE_PATH=labmanagement.sqlite3
 ```
@@ -150,7 +149,7 @@ git clone https://github.com/pujariakash221-eng/LabManagement.git "$env:ProgramD
 
 The repository is private, so authenticate through Git Credential Manager when it opens (or use a repository-scoped fine-grained token with **Contents: Read** when Git prompts). Do not use a raw GitHub download and never put a token in a command line or configuration file.
 
-The installer detects Git, reuses an existing checkout, securely prompts for the central server URL and enrollment secret, creates/reuses `.venv`, installs dependencies, writes a protected `agent.env`, registers the machine, starts the agent directly, and verifies its server connection and heartbeat. It intentionally does not configure automatic Windows startup; the agent must be started manually again after a reboot. New installations use `LAB_POWER_DRY_RUN=true`; a later run preserves the existing dry-run setting.
+The installer detects Git, reuses an existing checkout, securely prompts for the central server URL and enrollment secret, creates/reuses `.venv`, installs dependencies, writes a protected `agent.env`, registers the machine, starts the agent directly, and verifies its server connection and heartbeat. It intentionally does not configure automatic Windows startup; the agent must be started manually again after a reboot. Power commands are real shutdown/restart requests and are protected by operator/admin authorization plus an explicit confirmation dialog.
 
 For a one-click option after cloning, double-click `INSTALL_AGENT.bat`; it requests the required UAC elevation. Full details, including reruns and verification, are in [INSTALL_AGENT.md](INSTALL_AGENT.md).
 
@@ -225,18 +224,17 @@ For a one-click option after cloning, double-click `INSTALL_AGENT.bat`; it reque
 3. Active LAN devices are listed separately from registered managed workstations.
 
 ### 6. Power Operations in Dry-Run Mode
-1. Ensure `LAB_POWER_DRY_RUN=true` on both server and agent.
+1. Ensure the server and agent are running and the target is online.
 2. Select an ONLINE workstation in the dashboard and click **Shutdown** or **Restart**.
 3. The confirmation dialog opens with a clear warning and workstation details. Click **Confirm**.
 4. The power command is queued (`202 Accepted`).
-5. The agent fetches the command, logs the simulated action (`dry_run=True`), and acknowledges the outcome without shutting down the system.
+5. The agent fetches the command, executes the platform power command, and acknowledges the outcome.
 6. The event is recorded in the **Activity & Audit Log**.
 
 ### 7. Transitioning from Dry-Run to Production
 Before enabling real OS power commands:
 1. Verify laboratory firewall and authorization policies.
 2. Ensure the agent runs with permissions to invoke system power commands (Windows `shutdown.exe`, Linux `systemctl poweroff/reboot`, macOS `shutdown`).
-3. Set `LAB_POWER_DRY_RUN=false` in `.env` on the server and `agent.env` on all trusted lab agents.
 4. Restart the server and agent services.
 
 ---

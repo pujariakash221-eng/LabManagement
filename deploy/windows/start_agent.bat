@@ -38,8 +38,6 @@ if exist "agent.env" (
 )
 
 echo Target Server: %LAB_SERVER_URL%
-echo Power Dry-Run: %LAB_POWER_DRY_RUN%
-
 REM Launch agent via virtual environment Python
 .venv\Scripts\python.exe -m agent.main
 
@@ -47,4 +45,3 @@ if errorlevel 1 (
     echo [ERROR] Agent stopped with error code %errorlevel%.
     pause
 )
-

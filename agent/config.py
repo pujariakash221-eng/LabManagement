@@ -44,7 +44,6 @@ class AgentConfig:
     heartbeat_interval: float = 5.0
     agent_id_path: Path = _default_agent_id_path()
     enrollment_secret: str = ""
-    power_dry_run: bool = True
 
     @classmethod
     def from_environment(cls) -> "AgentConfig":
@@ -61,5 +60,4 @@ class AgentConfig:
                 os.getenv("LAB_AGENT_ID_PATH", str(cls.agent_id_path))
             ).expanduser(),
             enrollment_secret=os.getenv("LAB_AGENT_TOKEN") or os.getenv("LAB_AGENT_ENROLLMENT_SECRET", ""),
-            power_dry_run=os.getenv("LAB_POWER_DRY_RUN", "true").lower() in {"1", "true", "yes"},
         )

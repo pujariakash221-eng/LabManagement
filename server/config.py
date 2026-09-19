@@ -40,7 +40,6 @@ class ServerConfig:
     session_max_age: int = 28800
     secure_cookies: bool = False
     database_path: str = "labmanagement.sqlite3"
-    power_dry_run: bool = True
     audit_max_entries: int = 10000
 
     @classmethod
@@ -64,7 +63,6 @@ class ServerConfig:
             session_max_age=int(os.getenv("LAB_SESSION_MAX_AGE", str(cls.session_max_age))),
             secure_cookies=os.getenv("LAB_SECURE_COOKIES", "false").lower() in {"1", "true", "yes"},
             database_path=os.getenv("LAB_DATABASE_PATH", cls.database_path),
-            power_dry_run=os.getenv("LAB_POWER_DRY_RUN", "true").lower() in {"1", "true", "yes"},
             audit_max_entries=int(os.getenv("LAB_AUDIT_MAX_ENTRIES", str(cls.audit_max_entries))),
         )
         missing = [name for name, value in {

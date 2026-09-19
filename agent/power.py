@@ -6,12 +6,10 @@ import subprocess
 ALLOWED_ACTIONS = {"shutdown", "restart"}
 
 
-def execute_power_action(action: str, dry_run: bool) -> str:
+def execute_power_action(action: str) -> str:
     """Execute one fixed power operation; never accepts shell command text."""
     if action not in ALLOWED_ACTIONS:
         raise ValueError("Unsupported power action")
-    if dry_run:
-        return "dry_run"
 
     system = platform.system()
     commands = {

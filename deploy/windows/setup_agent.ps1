@@ -180,8 +180,6 @@ $EnvFile = Join-Path $ProjectRoot 'agent.env'
 $existingServerUrl = Get-EnvFileValue -Path $EnvFile -Name 'LAB_SERVER_URL'
 $existingSecret = Get-EnvFileValue -Path $EnvFile -Name 'LAB_AGENT_TOKEN'
 if ([string]::IsNullOrWhiteSpace($existingSecret)) { $existingSecret = Get-EnvFileValue -Path $EnvFile -Name 'LAB_AGENT_ENROLLMENT_SECRET' }
-$existingDryRun = Get-EnvFileValue -Path $EnvFile -Name 'LAB_POWER_DRY_RUN'
-if ([string]::IsNullOrWhiteSpace($existingDryRun)) { $existingDryRun = 'true' }
 
 Write-Host '[5/7] Configuring agent connection settings...' -ForegroundColor Yellow
 if ($PSBoundParameters.ContainsKey('ServerUrl')) { $finalServerUrl = Assert-ValidServerUrl -Value $ServerUrl }
@@ -215,7 +213,6 @@ try {
         "LAB_AGENT_TOKEN=$plainSecret",
         "LAB_AGENT_ID_PATH=$agentIdPath",
         'LAB_HEARTBEAT_INTERVAL=5.0',
-        "LAB_POWER_DRY_RUN=$existingDryRun",
         'LAB_SCREEN_CAPTURE_INTERVAL=0.5',
         'LAB_SCREEN_IMAGE_QUALITY=70',
         'LAB_SCREEN_MAX_WIDTH=1920',
@@ -232,7 +229,6 @@ try {
     Assert-NativeCommandSucceeded 'agent identity directory permission configuration' $dataAclExitCode
 } finally { $plainSecret = $null }
 Write-Host "      Configuration saved to $EnvFile" -ForegroundColor Green
-Write-Host "      LAB_POWER_DRY_RUN remains '$existingDryRun'." -ForegroundColor Green
 
 Write-Host '[6/7] Registering this machine with the central server...' -ForegroundColor Yellow
 $healthUrl = "$($finalServerUrl.TrimEnd('/'))/api/health"

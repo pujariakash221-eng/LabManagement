@@ -182,7 +182,7 @@ def queue_power_command(agent_id: str, action: str, user: User) -> dict[str, str
             raise HTTPException(status_code=409, detail="A power command is already pending")
         command = {"id": secrets.token_urlsafe(18), "action": action, "operator": user.username, "created_at": time.monotonic()}
         pending_power_commands[agent_id] = command
-    audit_log(app.state.database, f"POWER_{action.upper()}_REQUEST", user.username, agent_id, "queued", {"dry_run": SERVER_CONFIG.power_dry_run})
+    audit_log(app.state.database, f"POWER_{action.upper()}_REQUEST", user.username, agent_id, "queued")
     return {"status": "queued", "action": action}
 
 
@@ -213,15 +213,15 @@ def get_power_command(agent_id: str, request: Request) -> dict:
 @app.post("/api/agents/{agent_id}/power-command/ack")
 def acknowledge_power_command(agent_id: str, acknowledgement: PowerAcknowledgement, request: Request) -> dict[str, str]:
     require_agent_credential(request.headers.get("X-Agent-Token"))
-    if acknowledgement.result not in {"dry_run", "executed", "failure"}:
+    if acknowledgement.result not in {"executed", "failure"}:
         raise HTTPException(status_code=400, detail="Invalid command result")
     with power_commands_lock:
         command = pending_power_commands.get(agent_id)
         if not command or not hmac.compare_digest(command["id"], acknowledgement.command_id):
             raise HTTPException(status_code=404, detail="Command not found")
         del pending_power_commands[agent_id]
-    outcome = "SUCCESS" if acknowledgement.result in {"dry_run", "executed"} else "FAILURE"
-    audit_log(app.state.database, f"POWER_{command['action'].upper()}_{outcome}", command["operator"], agent_id, acknowledgement.result, {"dry_run": acknowledgement.result == "dry_run"})
+    outcome = "SUCCESS" if acknowledgement.result == "executed" else "FAILURE"
+    audit_log(app.state.database, f"POWER_{command['action'].upper()}_{outcome}", command["operator"], agent_id, acknowledgement.result)
     return {"status": "acknowledged"}
 
 

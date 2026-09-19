@@ -21,7 +21,7 @@ During installation it asks for:
 
 It then creates or reuses `.venv`, installs `requirements.txt`, writes the protected `agent.env`, registers the computer through the existing agent code, starts one direct `agent.main` process, and verifies registration and heartbeat with the server.
 
-`LAB_POWER_DRY_RUN=true` is set on first installation. On later runs the current dry-run setting is preserved; it is never silently changed to `false`.
+Power commands are enabled by default after installation. They remain restricted to authorized operators/administrators and require confirmation in the dashboard.
 
 ## Existing clone or one-click launcher
 
@@ -43,7 +43,7 @@ After success, verify the running process and dashboard status:
 Get-Process -Name python | Where-Object { $_.Path -like "*LabManagement*.venv\Scripts\python.exe" }
 ```
 
-The server dashboard should show the workstation as online shortly after the installer completes. The agent must be started manually again after a reboot. To move a trusted production lab out of safe mode, intentionally change `LAB_POWER_DRY_RUN=false` in its protected `agent.env` and restart the agent; do not make that change until power-control authorization and testing are complete.
+The server dashboard should show the workstation as online shortly after the installer completes. The agent must be started manually again after a reboot. Shutdown and restart actions execute immediately on the selected workstation after confirmation; test them only on a workstation where interruption is acceptable.
 
 ## Private-repository raw links
 
