@@ -319,7 +319,7 @@
 - **File**: deploy\windows\uninstall_agent.ps1
 - **Features**:
   - ✓ Stops running agent process
-  - ✓ Removes Windows scheduled task
+  - ✓ Stops the direct agent process
   - ✓ Optionally removes agent.env
   - ✓ Optionally removes agent_id.json
   - ✓ Does NOT delete repository
@@ -394,7 +394,7 @@
 - **Methodology**: Find → Understand → Fix → Test → Verify
 - **Examples**:
   - ✓ Missing uninstall_agent.ps1: CREATED
-  - ✓ Missing scheduled task in setup: ADDED
+  - ✓ Direct agent startup in setup: ADDED
   - ✓ Hardcoded IP in macOS plist: REMOVED (converted to placeholders)
   - ✓ Missing security headers: ADDED
   - ✓ WebSocket timeout issues: FIXED
@@ -521,7 +521,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ✅ **Project is GitHub-ready**  
 ✅ **Windows installation is simple and safe**  
-✅ **Auto-start configured via scheduled task**  
+✅ **Windows direct startup configured by the installer; boot auto-start intentionally disabled**  
 ✅ **Real power operations implemented**  
 ✅ **Dry-run safety preserved by default**  
 ✅ **Comprehensive documentation provided**  

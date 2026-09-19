@@ -13,7 +13,7 @@ LabManagement v1.0 is now **production-ready** for:
 - Installing on Windows lab computers via single `setup_agent.ps1` script
 - Multi-PC LAN deployment
 - Real power management (shutdown/restart) with safety defaults
-- Automatic startup on Windows boot via scheduled task
+- Direct Windows agent startup after installation; boot auto-start intentionally disabled
 - Comprehensive audit logging and monitoring
 
 **Key Metrics:**
@@ -321,7 +321,7 @@ LabManagement v1.0 is now **production-ready** for:
 - **File**: deploy/windows/uninstall_agent.ps1
 - **Functionality**:
   - ✓ Stops running agent process
-  - ✓ Removes scheduled task
+  - ✓ Stops the direct agent process
   - ✓ Optionally removes agent.env
   - ✓ Optionally removes agent_id.json
   - ✓ Does NOT delete Git repository
@@ -588,7 +588,7 @@ LabManagement v1.0 is now **production-ready** for:
   - ✓ Discovery works
   - ✓ Dry-run power works
   - ✓ Real Windows command implementation exists
-  - ✓ Auto-start exists (scheduled task)
+  - ✓ Direct agent startup is verified after installation
   - ✓ Uninstall works
 - **Security Verification**:
   - ✓ No hardcoded secrets

@@ -55,9 +55,8 @@ class AgentConfig:
             heartbeat_interval=float(
                 os.getenv("LAB_HEARTBEAT_INTERVAL", str(cls.heartbeat_interval))
             ),
-            # A Windows scheduled task runs as SYSTEM while the installer runs
-            # as an administrator.  Keeping the identity under the installation
-            # directory lets both contexts use the same machine identity.
+            # Keep the identity under the Windows installation directory so
+            # manual launches and installer reruns use the same machine ID.
             agent_id_path=Path(
                 os.getenv("LAB_AGENT_ID_PATH", str(cls.agent_id_path))
             ).expanduser(),

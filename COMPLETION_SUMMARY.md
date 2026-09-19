@@ -17,7 +17,7 @@
 
 2. **deploy/windows/uninstall_agent.ps1** (4.2 KB)
    - Safe uninstall script for removing agent from Windows
-   - Stops running agent, removes scheduled task, cleans config
+   - Stops the running agent and cleans configuration
    - Includes confirmation prompts, does not delete repository
 
 3. **RELEASE_NOTES.md** (17.0 KB)
@@ -89,7 +89,7 @@
 
 **Uninstall Script (Critical Item 22)**
 - Safely stops agent process
-- Removes Windows scheduled task
+- Does not configure Windows automatic startup
 - Optionally removes configuration files
 - Does not delete repository or affect server
 - Includes confirmation prompts
@@ -236,7 +236,7 @@ Each PC installation is identical:
 ### Items 1-15: Core Implementation
 - ✅ GitHub-ready repository
 - ✅ Windows easy installation
-- ✅ Auto-start via scheduled task
+- ✅ Direct agent start after installation
 - ✅ Real Windows shutdown/restart
 - ✅ Dry-run safety by default
 - ✅ Power implementation (strict + safe)

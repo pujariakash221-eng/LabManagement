@@ -61,6 +61,61 @@ function Assert-NativeCommandSucceeded {
     if ($ExitCode -ne 0) { throw "$Description failed with exit code $ExitCode." }
 }
 
+function Invoke-ProcessCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [string]$WorkingDirectory
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $FilePath
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $startInfo.WorkingDirectory = $WorkingDirectory
+    }
+
+    $quotedArguments = foreach ($argument in $Arguments) {
+        $value = [string]$argument
+        if ($value -match '[\s"]') {
+            '"' + $value.Replace('"', '\"') + '"'
+        } else {
+            $value
+        }
+    }
+    $startInfo.Arguments = $quotedArguments -join ' '
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    [pscustomobject]@{
+        ExitCode = $process.ExitCode
+        StdOut = $stdout
+        StdErr = $stderr
+    }
+}
+
+function Find-RunningAgentProcess {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    try {
+        $pythonPath = Join-Path $Root '.venv\Scripts\python.exe'
+        return Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction Stop |
+            Where-Object {
+                $_.ExecutablePath -and
+                $_.ExecutablePath -ieq $pythonPath -and
+                $_.CommandLine -match '-m\s+agent\.main'
+            } |
+            Select-Object -First 1
+    } catch {
+        return $null
+    }
+}
+
 function Assert-ValidServerUrl {
     param([Parameter(Mandatory=$true)][string]$Value)
     $uri = $null
@@ -70,7 +125,7 @@ function Assert-ValidServerUrl {
     return $uri.AbsoluteUri.TrimEnd('/')
 }
 
-if (-not (Test-IsAdministrator)) { throw "Administrator rights are required to create and start the SYSTEM auto-start task. Re-open PowerShell as Administrator and run the installer again." }
+if (-not (Test-IsAdministrator)) { throw "Administrator rights are required to install the agent under the selected directory. Re-open PowerShell as Administrator and run the installer again." }
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  Computer Lab Management - Windows Agent Setup" -ForegroundColor Cyan
@@ -78,9 +133,9 @@ Write-Host "==========================================================" -Foregro
 
 $ProjectRoot = Resolve-ProjectRoot -ExplicitProjectRoot $ProjectRoot
 Set-Location -LiteralPath $ProjectRoot
-Write-Host "[1/8] Installation directory: $ProjectRoot" -ForegroundColor Green
+Write-Host "[1/7] Installation directory: $ProjectRoot" -ForegroundColor Green
 
-Write-Host "[2/8] Checking for Python 3.12+..." -ForegroundColor Yellow
+Write-Host "[2/7] Checking for Python 3.12+..." -ForegroundColor Yellow
 $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
 $pythonArguments = @()
 if (-not $pythonCommand) { $pythonCommand = Get-Command python -ErrorAction SilentlyContinue }
@@ -101,7 +156,7 @@ Write-Host "      Detected: $pythonVersionOutput" -ForegroundColor Green
 
 $VenvDir = Join-Path $ProjectRoot '.venv'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
-Write-Host "[3/8] Preparing virtual environment: $VenvDir" -ForegroundColor Yellow
+Write-Host "[3/7] Preparing virtual environment: $VenvDir" -ForegroundColor Yellow
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     if (Test-Path -LiteralPath $VenvDir) { throw "The existing virtual environment is incomplete ($VenvPython is missing). Remove only '$VenvDir' and rerun the installer." }
     & $pythonExecutable @pythonArguments '-m' 'venv' $VenvDir
@@ -110,7 +165,7 @@ if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
 }
 Write-Host '      Virtual environment ready.' -ForegroundColor Green
 
-Write-Host '[4/8] Installing required Python dependencies...' -ForegroundColor Yellow
+Write-Host '[4/7] Installing required Python dependencies...' -ForegroundColor Yellow
 & $VenvPython '-m' 'pip' 'install' '--upgrade' 'pip' '--quiet'
 $pipExitCode = $LASTEXITCODE
 Assert-NativeCommandSucceeded 'pip upgrade' $pipExitCode
@@ -128,7 +183,7 @@ if ([string]::IsNullOrWhiteSpace($existingSecret)) { $existingSecret = Get-EnvFi
 $existingDryRun = Get-EnvFileValue -Path $EnvFile -Name 'LAB_POWER_DRY_RUN'
 if ([string]::IsNullOrWhiteSpace($existingDryRun)) { $existingDryRun = 'true' }
 
-Write-Host '[5/8] Configuring agent connection settings...' -ForegroundColor Yellow
+Write-Host '[5/7] Configuring agent connection settings...' -ForegroundColor Yellow
 if ($PSBoundParameters.ContainsKey('ServerUrl')) { $finalServerUrl = Assert-ValidServerUrl -Value $ServerUrl }
 else {
     $serverPrompt = 'Central server URL (for example http://192.168.1.100:8000)'
@@ -179,45 +234,90 @@ try {
 Write-Host "      Configuration saved to $EnvFile" -ForegroundColor Green
 Write-Host "      LAB_POWER_DRY_RUN remains '$existingDryRun'." -ForegroundColor Green
 
-Write-Host '[6/8] Registering this machine with the central server...' -ForegroundColor Yellow
+Write-Host '[6/7] Registering this machine with the central server...' -ForegroundColor Yellow
 $healthUrl = "$($finalServerUrl.TrimEnd('/'))/api/health"
 try {
     $healthResponse = Invoke-RestMethod -Uri $healthUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
     if ($healthResponse.status -ne 'running') { throw 'Unexpected health response.' }
 } catch { throw "The central server is not reachable at $healthUrl. Check the LAN URL, firewall, and server status. Details: $($_.Exception.Message)" }
 
-# Python/httpx logs INFO messages to stderr. Do not merge stderr into the PowerShell
-# success stream: PowerShell 5.1/7 can surface those harmless messages as
-# NativeCommandError records even when Python exits successfully.
-& $VenvPython '-c' 'import logging; logging.disable(logging.CRITICAL); from agent.main import register; import json; print(json.dumps(register()))' 2>$null
-$registrationExitCode = $LASTEXITCODE
-Assert-NativeCommandSucceeded 'Agent registration' $registrationExitCode
+$registrationCommand = @(
+    '-c',
+    'from agent.main import register; import json; print(json.dumps(register()))'
+)
+$registrationResult = Invoke-ProcessCapture -FilePath $VenvPython -Arguments $registrationCommand -WorkingDirectory $ProjectRoot
+if ($registrationResult.ExitCode -ne 0) {
+    throw "Agent registration failed with exit code $($registrationResult.ExitCode). Stdout: $($registrationResult.StdOut.Trim()) Stderr: $($registrationResult.StdErr.Trim())"
+}
+if ([string]::IsNullOrWhiteSpace($registrationResult.StdOut)) {
+    throw 'Agent registration succeeded but produced no JSON output on stdout.'
+}
+try {
+    $null = $registrationResult.StdOut.Trim() | ConvertFrom-Json -ErrorAction Stop
+} catch {
+    throw "Agent registration succeeded but returned invalid JSON on stdout: $($registrationResult.StdOut.Trim())"
+}
 Write-Host '      Server connection verified and machine registered.' -ForegroundColor Green
 
-Write-Host '[7/8] Configuring Windows auto-start...' -ForegroundColor Yellow
-$TaskName = 'LabManagement Agent'
-$TaskPath = '\'
-$TaskAction = New-ScheduledTaskAction -Execute $VenvPython -Argument '-m agent.main' -WorkingDirectory $ProjectRoot
-$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
-$TaskSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable $true -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
-$TaskPrincipal = New-ScheduledTaskPrincipal -UserID 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $TaskAction -Trigger $TaskTrigger -Settings $TaskSettings -Principal $TaskPrincipal -Force | Out-Null
-Write-Host '      Windows scheduled task configured.' -ForegroundColor Green
-
-Write-Host '[8/8] Starting the LabManagement agent...' -ForegroundColor Yellow
-Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
-Start-Sleep -Seconds 2
-$scheduledTask = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
-if ($scheduledTask.State -ne 'Running') {
-    $taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
-    throw "The scheduled task did not remain running (state: $($scheduledTask.State), result: $($taskInfo.LastTaskResult))."
+Write-Host '[7/7] Starting LabManagement Agent...' -ForegroundColor Yellow
+$existingAgent = Find-RunningAgentProcess -Root $ProjectRoot
+$startedNewAgent = $false
+if ($existingAgent) {
+    $agentProcess = Get-Process -Id $existingAgent.ProcessId -ErrorAction Stop
+    $agentPid = $existingAgent.ProcessId
+    Write-Host "      Agent is already running (PID: $agentPid); no duplicate process created." -ForegroundColor Green
+} else {
+    $agentProcess = New-Object System.Diagnostics.Process
+    $agentProcess.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $agentProcess.StartInfo.FileName = $VenvPython
+    $agentProcess.StartInfo.Arguments = '-m agent.main'
+    $agentProcess.StartInfo.WorkingDirectory = $ProjectRoot
+    $agentProcess.StartInfo.UseShellExecute = $false
+    $agentProcess.StartInfo.CreateNoWindow = $true
+    $agentProcess.StartInfo.RedirectStandardOutput = $false
+    $agentProcess.StartInfo.RedirectStandardError = $false
+    try {
+        $null = $agentProcess.Start()
+    } catch {
+        throw "Could not start LabManagement Agent with '$VenvPython'. Details: $($_.Exception.Message)"
+    }
+    $agentPid = $agentProcess.Id
+    $startedNewAgent = $true
 }
-Write-Host "      Agent task is running and connected to $finalServerUrl." -ForegroundColor Green
+
+Start-Sleep -Seconds 2
+if ($agentProcess.HasExited) {
+    throw "LabManagement Agent exited during startup with code $($agentProcess.ExitCode)."
+}
+
+$heartbeatCommand = @(
+    '-c',
+    "from agent.config import AgentConfig; from agent.client import send_heartbeat; import json; c=AgentConfig.from_environment(); print(json.dumps(send_heartbeat(c.server_url, c.agent_id_path.read_text(encoding='utf-8').strip(), c.enrollment_secret)))"
+)
+$heartbeatResult = Invoke-ProcessCapture -FilePath $VenvPython -Arguments $heartbeatCommand -WorkingDirectory $ProjectRoot
+if ($heartbeatResult.ExitCode -ne 0) {
+    if ($startedNewAgent -and -not $agentProcess.HasExited) { Stop-Process -Id $agentPid -Force -ErrorAction SilentlyContinue }
+    throw "LabManagement Agent started with PID $agentPid but heartbeat verification failed. Stdout: $($heartbeatResult.StdOut.Trim()) Stderr: $($heartbeatResult.StdErr.Trim())"
+}
+try {
+    $heartbeatResponse = $heartbeatResult.StdOut.Trim() | ConvertFrom-Json -ErrorAction Stop
+} catch {
+    if ($startedNewAgent -and -not $agentProcess.HasExited) { Stop-Process -Id $agentPid -Force -ErrorAction SilentlyContinue }
+    throw "Heartbeat verification returned invalid JSON."
+}
+if ($heartbeatResponse.status -ne 'ONLINE') {
+    if ($startedNewAgent -and -not $agentProcess.HasExited) { Stop-Process -Id $agentPid -Force -ErrorAction SilentlyContinue }
+    throw "Heartbeat verification did not report ONLINE."
+}
+if ($agentProcess.HasExited) {
+    throw "LabManagement Agent exited after startup with code $($agentProcess.ExitCode)."
+}
+Write-Host "      Agent started successfully (PID: $agentPid) and heartbeat verified." -ForegroundColor Green
 Write-Host ''
 Write-Host '==========================================================' -ForegroundColor Green
 Write-Host '  Installation Complete' -ForegroundColor Green
 Write-Host '==========================================================' -ForegroundColor Green
 Write-Host "  Installation directory: $ProjectRoot" -ForegroundColor White
 Write-Host "  Configuration file:     $EnvFile" -ForegroundColor White
-Write-Host "  Scheduled task:         $TaskName" -ForegroundColor White
+Write-Host '  Automatic Windows startup: not configured' -ForegroundColor White
 Write-Host "  Power dry-run mode:     $existingDryRun" -ForegroundColor White
